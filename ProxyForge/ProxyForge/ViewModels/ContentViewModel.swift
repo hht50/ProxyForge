@@ -11,11 +11,12 @@ import os.log
 final class ContentViewModel: ObservableObject {
 
     // ── 数据状态 ──────────────────────────────────────────────────────────────
-    @Published var apps:       [AppEntry] = []
-    @Published var selectedID: String?    = nil
-    @Published var isLoading:  Bool       = false
-    @Published var statusText: String     = "请打开 App_Privacy_Report_v4_*.ndjson 文件"
-    @Published var ruleText:   String     = "← 点击左侧应用列表，查看该应用的分流规则\n\n请先点击工具栏「打开文件」按钮"
+    @Published var apps:        [AppEntry]   = []
+    /// 多选 ID 集合（AppTableView 直接绑定）
+    @Published var selectedIDs: Set<String>  = []
+    @Published var isLoading:   Bool         = false
+    @Published var statusText:  String       = "请打开 App_Privacy_Report_v4_*.ndjson 文件"
+    @Published var ruleText:    String       = "← 点击左侧应用列表，查看该应用的分流规则\n\n请先点击工具栏「打开文件」按钮"
     @Published var sortOrder: [KeyPathComparator<AppEntry>] = [
         KeyPathComparator(\.totalHits, order: .reverse)
     ]
@@ -36,10 +37,20 @@ final class ContentViewModel: ObservableObject {
 
     // ── 派生属性 ──────────────────────────────────────────────────────────────
 
-    var sortedApps: [AppEntry]  { apps.sorted(using: sortOrder) }
-    var selectedApp: AppEntry?  { apps.first { $0.id == selectedID } }
+    var sortedApps: [AppEntry] { apps.sorted(using: sortOrder) }
 
-    /// 基础选项（不含 sharedDomains；用于 formatAll / copyAll / exportFile）
+    /// 当前预览用的单个 App（多选时取第一个）
+    var selectedApp: AppEntry? {
+        guard let first = selectedIDs.first else { return nil }
+        return apps.first { $0.id == first }
+    }
+
+    /// 当前多选的 App 列表（保持 sortedApps 顺序）
+    var selectedApps: [AppEntry] {
+        sortedApps.filter { selectedIDs.contains($0.id) }
+    }
+
+    /// 基础选项（不含 sharedDomains；用于 formatAll / 导出）
     var options: RuleOptions {
         RuleOptions(
             mergeSub:    settings.mergeSub,
@@ -99,26 +110,22 @@ final class ContentViewModel: ObservableObject {
         }
     }
 
+    // ── 预览刷新 ──────────────────────────────────────────────────────────────
+
     func refreshPreview() {
         guard let app = selectedApp else { return }
-
-        if settings.exclusiveOnly {
-            // 只显独占：过滤掉共享域名，全部域名作为活跃规则
-            ruleText = formatter.formatOne(app: filteredApp(app), options: options)
-        } else {
-            // 显示全部：独占域名为活跃规则，共享域名在注释区展示
-            var opts = options
-            opts.sharedDomains = Set(sharedDomainApps.keys)
-            ruleText = formatter.formatOne(app: app, options: opts)
-        }
+        // 预览：独占域名作为活跃规则，共享域名以注释显示（帮助用户分辨）
+        var opts = options
+        opts.sharedDomains = Set(sharedDomainApps.keys)
+        ruleText = formatter.formatOne(app: app, options: opts)
         Logger.ui.debug("刷新预览: \(app.bundleID, privacy: .public)")
     }
 
     // ── 独占域名过滤 ──────────────────────────────────────────────────────────
 
-    /// exclusiveOnly 开启时，返回去掉共享域名后的 AppEntry 副本；否则原样返回。
+    /// 返回去掉共享域名后的 AppEntry 副本。
     func filteredApp(_ app: AppEntry) -> AppEntry {
-        guard settings.exclusiveOnly, !sharedDomainApps.isEmpty else { return app }
+        guard !sharedDomainApps.isEmpty else { return app }
         let shared = Set(sharedDomainApps.keys)
         let doms   = app.domains.filter { !shared.contains($0.key) }
         let hits   = doms.values.reduce(0) { $0 + $1.hits }
@@ -127,7 +134,6 @@ final class ContentViewModel: ObservableObject {
 
     // ── 共享域名计算 ──────────────────────────────────────────────────────────
 
-    /// 返回被 ≥2 个 App 访问的域名映射（domain → [bundleID]）。
     private static func computeSharedDomains(from apps: [AppEntry]) -> [String: [String]] {
         var map = [String: Set<String>]()
         for app in apps {
@@ -142,7 +148,7 @@ final class ContentViewModel: ObservableObject {
         return result
     }
 
-    // ── 复制 / 导出 ───────────────────────────────────────────────────────────
+    // ── 复制 ──────────────────────────────────────────────────────────────────
 
     func copySelected() {
         NSPasteboard.general.clearContents()
@@ -153,29 +159,163 @@ final class ContentViewModel: ObservableObject {
 
     func copyAll() {
         guard !apps.isEmpty else { statusText = "⚠ 请先加载文件"; return }
-        let filtered = sortedApps.map { filteredApp($0) }
-        let text     = formatter.formatAll(apps: filtered, options: options)
+        // 全量导出：所有域名作为活跃规则（options.sharedDomains 为空）
+        let exportApps = settings.exclusiveOnly
+            ? sortedApps.map { filteredApp($0) }
+            : sortedApps
+        let text = formatter.formatAll(apps: exportApps, options: options)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        Logger.export.info("已复制全部规则 (\(self.apps.count, privacy: .public) 个应用, 独占:\(self.settings.exclusiveOnly, privacy: .public))")
+        Logger.export.info("已复制全部规则 (\(self.apps.count, privacy: .public) 个应用)")
         statusText = "✓ 已复制全部规则（\(apps.count) 个应用）"
     }
 
-    func exportFile() {
+    // ── 导出 ──────────────────────────────────────────────────────────────────
+
+    /// 导出选中的应用（单个 → TXT，多个 → ZIP）
+    func exportSelected() {
+        let targets = selectedApps
+        guard !targets.isEmpty else {
+            exportAll(); return
+        }
+        if targets.count == 1 {
+            exportSingle(app: targets[0])
+        } else {
+            exportMultipleAsZip(apps: targets)
+        }
+    }
+
+    /// 导出全部应用（单文件）
+    func exportAll() {
         guard !apps.isEmpty else { statusText = "⚠ 请先加载文件"; return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "rules.\(formatter.fileExtension)"
+        let scopeTag = settings.exclusiveOnly ? "独有" : "全部"
+        panel.nameFieldStringValue = "ProxyForge_\(scopeTag)_\(dateTag()).\(formatter.fileExtension)"
         if let t = UTType(filenameExtension: formatter.fileExtension) { panel.allowedContentTypes = [t] }
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let filtered = sortedApps.map { filteredApp($0) }
-            let text     = formatter.formatAll(apps: filtered, options: options)
+            let exportApps = settings.exclusiveOnly
+                ? sortedApps.map { filteredApp($0) }
+                : sortedApps
+            let text = formatter.formatAll(apps: exportApps, options: options)
             try text.write(to: url, atomically: true, encoding: .utf8)
-            Logger.export.info("导出成功: \(url.lastPathComponent, privacy: .public)")
+            Logger.export.info("导出全部成功: \(url.lastPathComponent, privacy: .public)")
             statusText = "✓ 已导出到 \(url.lastPathComponent)"
         } catch {
             Logger.export.error("导出失败: \(error.localizedDescription, privacy: .public)")
             statusText = "❌ 导出失败: \(error.localizedDescription)"
         }
+    }
+
+    // ── 私有：单 App 导出 ─────────────────────────────────────────────────────
+
+    private func exportSingle(app: AppEntry) {
+        let panel = NSSavePanel()
+        let scopeTag = settings.exclusiveOnly ? "独有" : "全部"
+        let safeName = app.name.replacingOccurrences(of: "/", with: "-")
+        panel.nameFieldStringValue = "\(safeName)_\(scopeTag)_\(dateTag()).\(formatter.fileExtension)"
+        if let t = UTType(filenameExtension: formatter.fileExtension) { panel.allowedContentTypes = [t] }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let exportApp = settings.exclusiveOnly ? filteredApp(app) : app
+            let text      = formatter.formatOne(app: exportApp, options: options)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            Logger.export.info("导出单 App 成功: \(url.lastPathComponent, privacy: .public)")
+            statusText = "✓ 已导出 \(app.name) → \(url.lastPathComponent)"
+        } catch {
+            Logger.export.error("导出失败: \(error.localizedDescription, privacy: .public)")
+            statusText = "❌ 导出失败: \(error.localizedDescription)"
+        }
+    }
+
+    // ── 私有：多 App ZIP 导出 ─────────────────────────────────────────────────
+
+    private func exportMultipleAsZip(apps targets: [AppEntry]) {
+        let panel = NSSavePanel()
+        let scopeTag = settings.exclusiveOnly ? "独有" : "全部"
+        panel.nameFieldStringValue = "ProxyForge_\(targets.count)个应用_\(scopeTag)_\(dateTag()).zip"
+        if let t = UTType(filenameExtension: "zip") { panel.allowedContentTypes = [t] }
+        guard panel.runModal() == .OK, let zipURL = panel.url else { return }
+
+        let capturedFormatter  = formatter
+        let capturedOptions    = options
+        let capturedExclusive  = settings.exclusiveOnly
+        let capturedFiltered   = capturedExclusive
+            ? targets.map { [weak self] app -> AppEntry in self?.filteredApp(app) ?? app }
+            : targets
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            do {
+                try await Self.buildZip(
+                    apps:      capturedFiltered,
+                    formatter: capturedFormatter,
+                    options:   capturedOptions,
+                    scopeTag:  scopeTag,
+                    to:        zipURL
+                )
+                await MainActor.run {
+                    Logger.export.info("ZIP 导出成功: \(zipURL.lastPathComponent, privacy: .public)")
+                    self.statusText = "✓ 已导出 \(targets.count) 个应用 → \(zipURL.lastPathComponent)"
+                }
+            } catch {
+                await MainActor.run {
+                    Logger.export.error("ZIP 导出失败: \(error.localizedDescription, privacy: .public)")
+                    self.statusText = "❌ ZIP 导出失败: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// 将多个 App 规则写入临时目录后用系统 zip 打包
+    private static func buildZip(
+        apps:      [AppEntry],
+        formatter: any RuleFormatter,
+        options:   RuleOptions,
+        scopeTag:  String,
+        to zipURL: URL
+    ) async throws {
+        let fm      = FileManager.default
+        let tmpDir  = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fm.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tmpDir) }
+
+        var filePaths: [String] = []
+        for app in apps {
+            let safeName = app.name.replacingOccurrences(of: "/", with: "-")
+            let fileName = "\(safeName)_\(scopeTag).\(formatter.fileExtension)"
+            let fileURL  = tmpDir.appendingPathComponent(fileName)
+            let text     = formatter.formatOne(app: app, options: options)
+            try text.write(to: fileURL, atomically: true, encoding: .utf8)
+            filePaths.append(fileURL.path)
+        }
+
+        // 如果目标 zip 已存在，先删除（zip 工具会追加而不是覆盖）
+        if fm.fileExists(atPath: zipURL.path) {
+            try fm.removeItem(at: zipURL)
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        // -j: junk paths（只保留文件名，不保留目录层级）
+        process.arguments = ["-j", zipURL.path] + filePaths
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            throw NSError(
+                domain: "ProxyForge.ZipError",
+                code:   Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: "zip 返回错误码 \(process.terminationStatus)"]
+            )
+        }
+    }
+
+    // ── 工具 ──────────────────────────────────────────────────────────────────
+
+    private func dateTag() -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        return fmt.string(from: Date())
     }
 }

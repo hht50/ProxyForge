@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - 选项栏
 
-/// 主窗口顶部的控制条：过滤开关、策略名、格式选择器、状态文字。
+/// 主窗口顶部的控制条：过滤开关、策略名、格式选择器、导出范围、状态文字。
 struct OptionsBarView: View {
     @EnvironmentObject private var settings: UserSettings
     @EnvironmentObject private var vm:       ContentViewModel
@@ -18,11 +18,18 @@ struct OptionsBarView: View {
             Toggle("包含 IP", isOn: $settings.includeIPs)
                 .onChange(of: settings.includeIPs) { _ in vm.refreshPreview() }
 
-            // 关闭时：独占规则正常显示，共享域名以注释形式附于底部
-            // 开启时：只保留独占域名，共享域名完全隐藏（导出同步生效）
-            Toggle("仅导出独占", isOn: $settings.exclusiveOnly)
-                .onChange(of: settings.exclusiveOnly) { _ in vm.refreshPreview() }
-                .help("关闭：预览中共享域名以注释显示；开启：只输出该 App 独占的域名")
+            Divider().frame(height: 16)
+
+            // 导出范围：单选 Picker，替代原 Toggle
+            Text("导出范围:").foregroundStyle(.secondary)
+            Picker("", selection: $settings.exclusiveOnly) {
+                Text("仅独有域名").tag(true)
+                Text("全部域名").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 160)
+            .help("仅独有域名：只导出该 App 独占使用的域名\n全部域名：包含独有域名 + 与其他 App 共享的域名")
+            .onChange(of: settings.exclusiveOnly) { _ in vm.refreshPreview() }
 
             Divider().frame(height: 16)
 

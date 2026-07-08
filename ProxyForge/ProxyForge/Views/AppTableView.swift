@@ -2,12 +2,12 @@ import SwiftUI
 
 // MARK: - 应用列表
 
-/// 展示已解析的 AppEntry 列表，支持点击选中和列标题排序。
+/// 展示已解析的 AppEntry 列表，支持多选和列标题排序。
 struct AppTableView: View {
     @EnvironmentObject private var vm: ContentViewModel
 
     var body: some View {
-        Table(vm.sortedApps, selection: $vm.selectedID, sortOrder: $vm.sortOrder) {
+        Table(vm.sortedApps, selection: $vm.selectedIDs, sortOrder: $vm.sortOrder) {
 
             TableColumn("Bundle ID", value: \.bundleID) { app in
                 Text(app.bundleID)
@@ -44,7 +44,7 @@ struct AppTableView: View {
             }
             .width(60)
         }
-        .onChange(of: vm.selectedID) { _ in vm.refreshPreview() }
+        .onChange(of: vm.selectedIDs) { _ in vm.refreshPreview() }
     }
 
     private func hitColor(_ hits: Int) -> Color {

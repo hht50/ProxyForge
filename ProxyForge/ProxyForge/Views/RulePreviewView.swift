@@ -17,20 +17,47 @@ struct RulePreviewView: View {
 
                 Spacer()
 
-                Button("复制选中") { vm.copySelected() }.buttonStyle(.bordered)
-                Button("复制全部") { vm.copyAll()     }.buttonStyle(.bordered)
-                Button("导出 .\(vm.formatter.fileExtension)") { vm.exportFile() }
-                    .buttonStyle(.borderedProminent)
+                Button("复制选中") { vm.copySelected() }
+                    .buttonStyle(.bordered)
+                    .disabled(vm.selectedIDs.isEmpty)
+
+                Button("复制全部") { vm.copyAll() }
+                    .buttonStyle(.bordered)
+
+                // 导出选中按钮：单个→TXT，多个→ZIP
+                exportSelectedButton
+
+                Button("导出全部") { vm.exportAll() }
+                    .buttonStyle(.bordered)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
 
             Divider()
 
-            // 规则文本：使用 NSTextView 包装实现大文本高性能懒加载渲染
+            // 规则文本：NSTextView 实现大文本高性能懒加载渲染
             MonoTextView(text: vm.ruleText)
                 .background(Color(NSColor.textBackgroundColor))
         }
+    }
+
+    private var exportSelectedButton: some View {
+        let count = vm.selectedIDs.count
+        let isMulti = count > 1
+        let label   = isMulti
+            ? "导出选中 (\(count) 个) .zip"
+            : "导出选中 .\(vm.formatter.fileExtension)"
+        let icon    = isMulti ? "archivebox" : "square.and.arrow.up"
+        let tip     = isMulti
+            ? "将 \(count) 个选中应用分别生成规则文件，打包为 ZIP 压缩包"
+            : "将选中应用的规则导出为 .\(vm.formatter.fileExtension) 文件"
+
+        return Button { vm.exportSelected() } label: {
+            Label(label, systemImage: icon)
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(count == 0)
+        .help(tip)
     }
 }
 
