@@ -9,6 +9,8 @@ struct ContentView: View {
         VStack(spacing: 0) {
             OptionsBarView()
             Divider()
+            SharedDomainsView()
+            Divider()
             VSplitView {
                 AppTableView()
                     .frame(minHeight: 200)

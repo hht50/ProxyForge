@@ -18,6 +18,9 @@ struct OptionsBarView: View {
             Toggle("包含 IP", isOn: $settings.includeIPs)
                 .onChange(of: settings.includeIPs) { _ in vm.refreshPreview() }
 
+            Toggle("只显独占域名", isOn: $settings.exclusiveOnly)
+                .onChange(of: settings.exclusiveOnly) { _ in vm.refreshPreview() }
+
             Divider().frame(height: 16)
 
             Text("策略名:").foregroundStyle(.secondary)

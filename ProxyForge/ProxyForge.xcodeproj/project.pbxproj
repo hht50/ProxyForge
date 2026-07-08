@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1755F95B327F703B0A0B8213 /* SharedDomainsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9A48B88FD76D138A3A0A68 /* SharedDomainsView.swift */; };
 		175BAF37D7E777B8480CECC3 /* DomainUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233E41740A59B37B19A98619 /* DomainUtils.swift */; };
 		27CE755B883648D0B1E5125F /* UserSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72F56D2E133C29CAAF7D58A1 /* UserSettings.swift */; };
 		4FA7503F4373181D70907CCC /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17E0E0BDCAFFEFC8271A91F1 /* ContentViewModel.swift */; };
@@ -39,6 +40,7 @@
 		D3E58F3511DCDA24913BAAD7 /* OptionsBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptionsBarView.swift; sourceTree = "<group>"; };
 		DA6FFD20E8B4BF4F0F805419 /* RuleFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuleFormatters.swift; sourceTree = "<group>"; };
 		E327758C9D10F267FBE00ECC /* RulePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulePreviewView.swift; sourceTree = "<group>"; };
+		EF9A48B88FD76D138A3A0A68 /* SharedDomainsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedDomainsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -123,6 +125,7 @@
 				709440305D5815BB92CDDEEA /* ContentView.swift */,
 				D3E58F3511DCDA24913BAAD7 /* OptionsBarView.swift */,
 				E327758C9D10F267FBE00ECC /* RulePreviewView.swift */,
+				EF9A48B88FD76D138A3A0A68 /* SharedDomainsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -198,6 +201,7 @@
 				58B04B613755493C820A93F3 /* RuleFormatters.swift in Sources */,
 				A514CEBE924EB20EE905C69D /* RuleOptions.swift in Sources */,
 				A240F6623BF6653A8BCE671D /* RulePreviewView.swift in Sources */,
+				1755F95B327F703B0A0B8213 /* SharedDomainsView.swift in Sources */,
 				27CE755B883648D0B1E5125F /* UserSettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

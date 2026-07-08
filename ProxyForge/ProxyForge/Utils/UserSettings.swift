@@ -24,22 +24,27 @@ final class UserSettings: ObservableObject {
     @Published var includeIPs: Bool {
         didSet { save(includeIPs, forKey: .includeIPs) }
     }
+    /// 规则预览 / 导出时只保留该 App 独占的域名（共享域名不输出）
+    @Published var exclusiveOnly: Bool {
+        didSet { save(exclusiveOnly, forKey: .exclusiveOnly) }
+    }
 
     // ── 初始化（从 UserDefaults 读取，不存在则用默认值）──────────────────────
 
     init() {
         let d = UserDefaults.standard
-        filterSystem = d.object(forKey: Key.filterSystem.rawValue) as? Bool ?? true
-        mergeSub     = d.object(forKey: Key.mergeSub.rawValue)     as? Bool ?? true
-        proxyName    = d.string(forKey: Key.proxyName.rawValue)         ?? "Proxy"
-        formatterIdx = d.object(forKey: Key.formatterIdx.rawValue) as? Int  ?? 0
-        includeIPs   = d.object(forKey: Key.includeIPs.rawValue)   as? Bool ?? true
+        filterSystem  = d.object(forKey: Key.filterSystem.rawValue)  as? Bool ?? true
+        mergeSub      = d.object(forKey: Key.mergeSub.rawValue)      as? Bool ?? false
+        proxyName     = d.string(forKey: Key.proxyName.rawValue)          ?? "Proxy"
+        formatterIdx  = d.object(forKey: Key.formatterIdx.rawValue)  as? Int  ?? 0
+        includeIPs    = d.object(forKey: Key.includeIPs.rawValue)    as? Bool ?? true
+        exclusiveOnly = d.object(forKey: Key.exclusiveOnly.rawValue) as? Bool ?? false
     }
 
     // ── 键名枚举 ──────────────────────────────────────────────────────────────
 
     private enum Key: String {
-        case filterSystem, mergeSub, proxyName, formatterIdx, includeIPs
+        case filterSystem, mergeSub, proxyName, formatterIdx, includeIPs, exclusiveOnly
     }
 
     private func save<T>(_ value: T, forKey key: Key) {
