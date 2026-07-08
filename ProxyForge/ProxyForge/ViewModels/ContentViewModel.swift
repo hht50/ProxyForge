@@ -39,10 +39,11 @@ final class ContentViewModel: ObservableObject {
     var sortedApps: [AppEntry]  { apps.sorted(using: sortOrder) }
     var selectedApp: AppEntry?  { apps.first { $0.id == selectedID } }
 
+    /// 基础选项（不含 sharedDomains；用于 formatAll / copyAll / exportFile）
     var options: RuleOptions {
         RuleOptions(
             mergeSub:    settings.mergeSub,
-            proxyTarget: settings.proxyName.isEmpty ? "Proxy" : settings.proxyName,
+            proxyTarget: settings.proxyName,
             includeIPs:  settings.includeIPs
         )
     }
@@ -83,8 +84,8 @@ final class ContentViewModel: ObservableObject {
                     self.apps             = result
                     self.sharedDomainApps = Self.computeSharedDomains(from: result)
                     self.isLoading        = false
-                    let filePart    = urls.count > 1 ? "\(urls.count) 个文件  ·  " : ""
-                    let sharedPart  = self.sharedDomainApps.isEmpty ? "" : "  ·  \(self.sharedDomainApps.count) 共享域名"
+                    let filePart   = urls.count > 1 ? "\(urls.count) 个文件  ·  " : ""
+                    let sharedPart = self.sharedDomainApps.isEmpty ? "" : "  ·  \(self.sharedDomainApps.count) 共享域名"
                     self.statusText = "✓  \(filePart)\(result.count) 个应用  ·  \(doms) 个域名  ·  \(hits) 次访问\(sharedPart)"
                     self.refreshPreview()
                 }
@@ -100,7 +101,16 @@ final class ContentViewModel: ObservableObject {
 
     func refreshPreview() {
         guard let app = selectedApp else { return }
-        ruleText = formatter.formatOne(app: filteredApp(app), options: options)
+
+        if settings.exclusiveOnly {
+            // 只显独占：过滤掉共享域名，全部域名作为活跃规则
+            ruleText = formatter.formatOne(app: filteredApp(app), options: options)
+        } else {
+            // 显示全部：独占域名为活跃规则，共享域名在注释区展示
+            var opts = options
+            opts.sharedDomains = Set(sharedDomainApps.keys)
+            ruleText = formatter.formatOne(app: app, options: opts)
+        }
         Logger.ui.debug("刷新预览: \(app.bundleID, privacy: .public)")
     }
 

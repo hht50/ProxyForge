@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - 规则预览面板
 
@@ -26,15 +27,53 @@ struct RulePreviewView: View {
 
             Divider()
 
-            // 规则文本
-            ScrollView([.horizontal, .vertical]) {
-                Text(vm.ruleText)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-            }
-            .background(Color(NSColor.textBackgroundColor))
+            // 规则文本：使用 NSTextView 包装实现大文本高性能懒加载渲染
+            MonoTextView(text: vm.ruleText)
+                .background(Color(NSColor.textBackgroundColor))
+        }
+    }
+}
+
+// MARK: - NSTextView 包装（支持选中、横向滚动、大文本高性能）
+
+struct MonoTextView: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSTextView.scrollableTextView()
+        guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
+
+        // 外观
+        textView.font             = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.backgroundColor  = NSColor.textBackgroundColor
+        textView.textColor        = NSColor.labelColor
+        textView.isEditable       = false
+        textView.isSelectable     = true
+        textView.isRichText       = false
+        textView.usesFindBar      = true   // Cmd+F 搜索
+
+        // 横向滚动：关闭宽度自动跟随，使长行可横向滚动
+        textView.isVerticallyResizable                    = true
+        textView.isHorizontallyResizable                  = true
+        textView.autoresizingMask                         = [.width]
+        textView.textContainer?.widthTracksTextView       = false
+        textView.textContainer?.containerSize             = NSSize(
+            width:  CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        scrollView.hasVerticalScroller   = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers    = true
+
+        textView.string = text
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        // 仅在内容变化时更新，避免无谓的重排版
+        if textView.string != text {
+            textView.string = text
         }
     }
 }

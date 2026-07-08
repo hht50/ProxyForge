@@ -33,12 +33,12 @@ final class UserSettings: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
-        filterSystem  = d.object(forKey: Key.filterSystem.rawValue)  as? Bool ?? true
-        mergeSub      = d.object(forKey: Key.mergeSub.rawValue)      as? Bool ?? false
-        proxyName     = d.string(forKey: Key.proxyName.rawValue)          ?? "Proxy"
-        formatterIdx  = d.object(forKey: Key.formatterIdx.rawValue)  as? Int  ?? 0
-        includeIPs    = d.object(forKey: Key.includeIPs.rawValue)    as? Bool ?? true
-        exclusiveOnly = d.object(forKey: Key.exclusiveOnly.rawValue) as? Bool ?? false
+        filterSystem  = d.object(forKey: Key.filterSystem.rawValue)  as? Bool   ?? true
+        mergeSub      = d.object(forKey: Key.mergeSub.rawValue)      as? Bool   ?? false
+        proxyName     = d.string(forKey: Key.proxyName.rawValue)                ?? ""
+        formatterIdx  = d.object(forKey: Key.formatterIdx.rawValue)  as? Int    ?? 0
+        includeIPs    = d.object(forKey: Key.includeIPs.rawValue)    as? Bool   ?? true
+        exclusiveOnly = d.object(forKey: Key.exclusiveOnly.rawValue) as? Bool   ?? false
     }
 
     // ── 键名枚举 ──────────────────────────────────────────────────────────────

@@ -9,8 +9,6 @@ struct ContentView: View {
         VStack(spacing: 0) {
             OptionsBarView()
             Divider()
-            SharedDomainsView()
-            Divider()
             VSplitView {
                 AppTableView()
                     .frame(minHeight: 200)
@@ -19,7 +17,7 @@ struct ContentView: View {
             }
         }
         .toolbar { toolbarItems }
-        .frame(minWidth: 980, minHeight: 660)
+        .frame(minWidth: 980, minHeight: 620)
     }
 
     // ── 工具栏 ────────────────────────────────────────────────────────────────
