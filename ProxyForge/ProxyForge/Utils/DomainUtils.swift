@@ -15,12 +15,45 @@ func rootDomain(_ domain: String) -> String {
     return parts.suffix(2).joined(separator: ".")
 }
 
-/// 从 Bundle ID 推导可读名称，例如 com.example.my-app → My App
+/// 从 Bundle ID 推导可读名称。
+/// 优先级：① 静态查表（KnownApps） → ② CamelCase 拆分 → ③ 原始末段首字母大写
 func deriveName(from bundleID: String) -> String {
-    guard let last = bundleID.split(separator: ".").last else { return bundleID }
-    return last
+    // ① 静态表命中（精确匹配，大小写不敏感）
+    if let known = KnownApps.displayName(for: bundleID) { return known }
+
+    // ② 取最后一个分段，去掉常见冗余后缀/前缀
+    let segments = bundleID.split(separator: ".")
+    // 跳过纯数字末段（如 com.company.app.1234）
+    let raw: String
+    if let last = segments.last, !last.allSatisfy(\.isNumber) {
+        raw = String(last)
+    } else if segments.count >= 2 {
+        raw = String(segments[segments.count - 2])
+    } else {
+        return bundleID
+    }
+
+    // ③ 预处理：连字符 / 下划线 → 空格
+    let spaced = raw
         .replacingOccurrences(of: "-", with: " ")
-        .split(separator: " ")
+        .replacingOccurrences(of: "_", with: " ")
+
+    // ④ CamelCase 拆分：在小写→大写边界插入空格
+    //    例：MyGreatApp → My Great App
+    var expanded = ""
+    var prevWasLower = false
+    for ch in spaced {
+        if ch.isUppercase && prevWasLower && !expanded.isEmpty && expanded.last != " " {
+            expanded.append(" ")
+        }
+        expanded.append(ch)
+        prevWasLower = ch.isLowercase
+    }
+
+    // ⑤ 每个单词首字母大写，过滤空串
+    let words = expanded
+        .split(separator: " ", omittingEmptySubsequences: true)
         .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-        .joined(separator: " ")
+
+    return words.isEmpty ? bundleID : words.joined(separator: " ")
 }

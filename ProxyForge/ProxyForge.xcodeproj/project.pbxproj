@@ -18,6 +18,7 @@
 		8DBBD8D93D2B42D31B9A5089 /* AppTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71A9BD9C18EF2E7E7A54E28 /* AppTableView.swift */; };
 		A240F6623BF6653A8BCE671D /* RulePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E327758C9D10F267FBE00ECC /* RulePreviewView.swift */; };
 		A514CEBE924EB20EE905C69D /* RuleOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CB595C2703A1F8D2618DE94 /* RuleOptions.swift */; };
+		B3E4B634F355F3572BC72B23 /* KnownApps.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF27D7E0FCFF8022D350DDAF /* KnownApps.swift */; };
 		C81AB551025FF12E8B61AAC3 /* AppEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93F15C2109A5C1D7F85B602D /* AppEntry.swift */; };
 		FB8206B4DE4D0B036714D3A3 /* OptionsBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E58F3511DCDA24913BAAD7 /* OptionsBarView.swift */; };
 /* End PBXBuildFile section */
@@ -32,6 +33,7 @@
 		8D57094CC97C3A76457FA5ED /* ProxyForgeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyForgeApp.swift; sourceTree = "<group>"; };
 		93F15C2109A5C1D7F85B602D /* AppEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEntry.swift; sourceTree = "<group>"; };
 		9CB595C2703A1F8D2618DE94 /* RuleOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuleOptions.swift; sourceTree = "<group>"; };
+		AF27D7E0FCFF8022D350DDAF /* KnownApps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnownApps.swift; sourceTree = "<group>"; };
 		B71A9BD9C18EF2E7E7A54E28 /* AppTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTableView.swift; sourceTree = "<group>"; };
 		D0350E4BE0D896B7AC0C54F8 /* ProxyForge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ProxyForge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D3E58F3511DCDA24913BAAD7 /* OptionsBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptionsBarView.swift; sourceTree = "<group>"; };
@@ -66,6 +68,7 @@
 			children = (
 				3FA16F6566F0AD115B333184 /* AppLogger.swift */,
 				233E41740A59B37B19A98619 /* DomainUtils.swift */,
+				AF27D7E0FCFF8022D350DDAF /* KnownApps.swift */,
 				72F56D2E133C29CAAF7D58A1 /* UserSettings.swift */,
 			);
 			path = Utils;
@@ -188,6 +191,7 @@
 				6CD1EFB3C64144C165B52841 /* ContentView.swift in Sources */,
 				4FA7503F4373181D70907CCC /* ContentViewModel.swift in Sources */,
 				175BAF37D7E777B8480CECC3 /* DomainUtils.swift in Sources */,
+				B3E4B634F355F3572BC72B23 /* KnownApps.swift in Sources */,
 				FB8206B4DE4D0B036714D3A3 /* OptionsBarView.swift in Sources */,
 				69E1750D56E6C3C5D462E879 /* ProxyForgeApp.swift in Sources */,
 				8533F96C01FB34E4E2072A72 /* ReportParser.swift in Sources */,
