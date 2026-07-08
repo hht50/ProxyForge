@@ -20,7 +20,8 @@ final class ContentViewModel: ObservableObject {
         KeyPathComparator(\.totalHits, order: .reverse)
     ]
 
-    private(set) var fileURL: URL? = nil
+    /// 已加载的文件列表（支持多文件合并）
+    @Published private(set) var fileURLs: [URL] = []
 
     // ── 对设置的引用（由外部注入）────────────────────────────────────────────
     let settings: UserSettings
@@ -49,35 +50,37 @@ final class ContentViewModel: ObservableObject {
 
     func openFilePicker() {
         let panel = NSOpenPanel()
-        panel.title = "选择 App Privacy Report 文件"
+        panel.title = "选择 App Privacy Report 文件（可多选合并）"
         if let t = UTType(filenameExtension: "ndjson") { panel.allowedContentTypes = [t] }
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Logger.ui.info("用户选择文件: \(url.lastPathComponent, privacy: .public)")
-        fileURL = url
-        loadFile()
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        let names = panel.urls.map(\.lastPathComponent).joined(separator: ", ")
+        Logger.ui.info("用户选择 \(panel.urls.count, privacy: .public) 个文件: \(names, privacy: .public)")
+        fileURLs = panel.urls
+        loadFiles()
     }
 
-    func loadFile() {
-        guard let url = fileURL else { return }
+    func loadFiles() {
+        guard !fileURLs.isEmpty else { return }
         isLoading  = true
-        statusText = "解析中…"
+        statusText = fileURLs.count == 1 ? "解析中…" : "并发解析 \(fileURLs.count) 个文件…"
 
-        // 捕获当前值，避免在后台任务中跨 actor 访问
+        let urls         = fileURLs
         let filterSystem = settings.filterSystem
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
-                let result = try parseReport(url: url, filterSystem: filterSystem)
+                let result = try await parseReports(urls: urls, filterSystem: filterSystem)
                 let doms   = result.reduce(0) { $0 + $1.domainCount }
                 let hits   = result.reduce(0) { $0 + $1.totalHits }
                 await MainActor.run {
                     self.apps       = result
                     self.isLoading  = false
-                    self.statusText = "✓  \(result.count) 个应用  ·  \(doms) 个域名  ·  \(hits) 次访问"
+                    let filePart    = urls.count > 1 ? "\(urls.count) 个文件  ·  " : ""
+                    self.statusText = "✓  \(filePart)\(result.count) 个应用  ·  \(doms) 个域名  ·  \(hits) 次访问"
                     self.refreshPreview()
                 }
             } catch {

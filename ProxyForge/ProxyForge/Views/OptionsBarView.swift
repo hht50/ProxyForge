@@ -10,7 +10,7 @@ struct OptionsBarView: View {
     var body: some View {
         HStack(spacing: 14) {
             Toggle("过滤系统应用", isOn: $settings.filterSystem)
-                .onChange(of: settings.filterSystem) { _ in vm.loadFile() }
+                .onChange(of: settings.filterSystem) { _ in vm.loadFiles() }
 
             Toggle("合并子域", isOn: $settings.mergeSub)
                 .onChange(of: settings.mergeSub) { _ in vm.refreshPreview() }

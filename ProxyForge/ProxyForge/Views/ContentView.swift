@@ -50,10 +50,10 @@ private struct OpenFileButton: View {
 private struct RefreshButton: View {
     @EnvironmentObject private var vm: ContentViewModel
     var body: some View {
-        Button { vm.loadFile() } label: {
+        Button { vm.loadFiles() } label: {
             Label("刷新", systemImage: "arrow.clockwise")
         }
-        .disabled(vm.fileURL == nil || vm.isLoading)
+        .disabled(vm.fileURLs.isEmpty || vm.isLoading)
     }
 }
 
