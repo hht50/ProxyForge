@@ -125,7 +125,21 @@ final class ContentViewModel: ObservableObject {
         }
     }
 
-    // ── 预览刷新（异步 + 自动取消旧任务）────────────────────────────────────────
+    // ── 用户重命名后刷新身份信息 ─────────────────────────────────────────────
+
+    /// 重新解析所有 App 的身份（用户覆盖名称更新后调用）。
+    func reloadCurrentIdentities() {
+        apps = apps.map { app in
+            var updated  = app
+            let identity = AppIdentityResolver.shared.resolveIdentity(app.id)
+            updated.name     = identity.displayName
+            updated.identity = identity
+            return updated
+        }
+        refreshPreview()
+    }
+
+        // ── 预览刷新（异步 + 自动取消旧任务）────────────────────────────────────────
 
     func refreshPreview() {
         // 取消上一个未完成的格式化任务，避免旧结果覆盖新结果
@@ -166,7 +180,7 @@ final class ContentViewModel: ObservableObject {
         let shared = Set(sharedDomainApps.keys)
         let doms   = app.domains.filter { !shared.contains($0.key) }
         let hits   = doms.values.reduce(0) { $0 + $1.hits }
-        return AppEntry(id: app.id, name: app.name, domains: doms, totalHits: hits)
+        return AppEntry(id: app.id, name: app.name, domains: doms, totalHits: hits, identity: app.identity)
     }
 
     /// 纯函数版本，可在后台线程调用（不访问 self）
@@ -174,7 +188,7 @@ final class ContentViewModel: ObservableObject {
         guard !sharedKeys.isEmpty else { return app }
         let doms = app.domains.filter { !sharedKeys.contains($0.key) }
         let hits = doms.values.reduce(0) { $0 + $1.hits }
-        return AppEntry(id: app.id, name: app.name, domains: doms, totalHits: hits)
+        return AppEntry(id: app.id, name: app.name, domains: doms, totalHits: hits, identity: app.identity)
     }
 
     // ── 共享域名计算 ──────────────────────────────────────────────────────────

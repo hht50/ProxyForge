@@ -45,7 +45,10 @@ func parseReport(url: URL, filterSystem: Bool) throws -> [AppEntry] {
             let dom  = rec.domain, !dom.isEmpty
         else { skipped += 1; continue }
 
-        if filterSystem && bid.hasPrefix("com.apple.") { continue }
+        // 规范化：剥离 .helper/.xpc/.service 等进程后缀，实现同 App 多进程自动合并
+        let normalizedBID = AppIdentityResolver.shared.normalize(bid)
+
+        if filterSystem && normalizedBID.hasPrefix("com.apple.") { continue }
 
         let hits = rec.hits ?? 1
         let info = DomainInfo(
@@ -54,14 +57,18 @@ func parseReport(url: URL, filterSystem: Bool) throws -> [AppEntry] {
             owner:      rec.domainOwner ?? ""
         )
 
-        var entry = acc[bid] ?? Accumulator(name: deriveName(from: bid), domains: [:], totalHits: 0)
+        var entry = acc[normalizedBID] ?? Accumulator(name: deriveName(from: normalizedBID), domains: [:], totalHits: 0)
         entry.domains[dom]  = info
         entry.totalHits    += hits
-        acc[bid] = entry
+        acc[normalizedBID] = entry
     }
 
+    // 解析完毕后批量解析身份（避免在循环中重复调用 NSWorkspace）
     let result = acc.map { bid, a in
-        AppEntry(id: bid, name: a.name, domains: a.domains, totalHits: a.totalHits)
+        let identity = AppIdentityResolver.shared.resolveIdentity(bid)
+        return AppEntry(id: bid, name: identity.displayName,
+                        domains: a.domains, totalHits: a.totalHits,
+                        identity: identity)
     }.sorted(by: >)
 
     Logger.parser.info("解析完成: \(result.count, privacy: .public) 个应用, \(skipped, privacy: .public) 行跳过")

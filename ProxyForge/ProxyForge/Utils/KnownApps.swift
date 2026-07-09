@@ -2,24 +2,186 @@ import Foundation
 
 // MARK: - 已知应用名称静态表
 
-/// 静态 bundleID → 显示名称映射。
-/// 查询时 bundleID 统一转小写，实现大小写不敏感匹配。
+/// 静态 bundleID → 应用信息映射。
+/// 所有查询将 bundleID 统一转小写，实现大小写不敏感匹配。
 enum KnownApps {
+
+    // MARK: - 公开 API
 
     /// 返回已知的应用显示名称，未命中返回 `nil`。
     static func displayName(for bundleID: String) -> String? {
-        table[bundleID.lowercased()]
+        nameTable[bundleID.lowercased()]
     }
 
-    // MARK: - 主表（精确 bundleID，全部小写键）
-    private static let table: [String: String] = {
+    /// 返回已知的开发者名称，未命中返回 `nil`。
+    static func developer(for bundleID: String) -> String? {
+        developerTable[bundleID.lowercased()]
+    }
+
+    /// 返回已知的应用分类，未命中返回 `nil`。
+    static func category(for bundleID: String) -> AppCategory? {
+        categoryTable[bundleID.lowercased()]
+    }
+
+    // MARK: - 名称主表
+
+    private static let nameTable: [String: String] = {
         var d = [String: String]()
-        d.merge(chinese)    { a, _ in a }
-        d.merge(international) { a, _ in a }
-        d.merge(apple)      { a, _ in a }
+        d.merge(chinese)      { a, _ in a }
+        d.merge(international){ a, _ in a }
+        d.merge(apple)        { a, _ in a }
         d.merge(productivity) { a, _ in a }
         return d
     }()
+
+    // MARK: - 开发者元数据表（bundleID 小写 → 开发者名称）
+    private static let developerTable: [String: String] = [
+        // 腾讯
+        "com.tencent.xin": "腾讯", "com.tencent.wechat": "腾讯",
+        "com.tencent.qq": "腾讯", "com.tencent.qqmail": "腾讯",
+        "com.tencent.qqmusic": "腾讯", "com.tencent.tenvideo": "腾讯",
+        "com.tencent.wemeet": "腾讯", "com.tencent.wetype": "腾讯",
+        "com.tencent.enterprise": "腾讯", "com.tencent.channel": "腾讯",
+        // 阿里巴巴
+        "com.alibaba.alipay": "阿里巴巴", "com.alipay.iphoneclient": "阿里巴巴",
+        "com.alibaba.taobao": "阿里巴巴", "com.alibaba.dingtalk": "阿里巴巴",
+        "com.youku.youku": "阿里巴巴", "com.amap.maps": "阿里巴巴",
+        // 字节跳动
+        "com.ss.iphone.ugc.aweme": "字节跳动", "com.bytedance.lark": "字节跳动",
+        "com.bytedance.capcut": "字节跳动", "com.bytedance.coze": "字节跳动",
+        "com.ss.iphone.app.toutiao": "字节跳动", "com.tiktok.tiktok": "字节跳动",
+        // 百度
+        "com.baidu.baiduapp": "百度", "com.baidu.netdisk": "百度",
+        "com.baidu.baidumaps": "百度",
+        // 网易
+        "com.netease.cloudmusic": "网易", "com.netease.mail": "网易",
+        "com.youdao.youdaodict": "网易",
+        // 哔哩哔哩
+        "tv.danmaku.bilibili": "哔哩哔哩", "com.bilibili.app.main": "哔哩哔哩",
+        // Google
+        "com.google.chrome": "Google", "com.google.gmail": "Google",
+        "com.google.maps": "Google", "com.google.youtube": "Google",
+        "com.google.translate": "Google", "com.google.drive": "Google",
+        "com.google.googlemobile": "Google",
+        // Meta
+        "com.facebook.facebook": "Meta", "com.facebook.messenger": "Meta",
+        "com.instagram.instagram": "Meta", "com.facebook.whatsapp": "Meta",
+        "com.whatsapp.whatsapp": "Meta", "com.facebook.threads": "Meta",
+        // Microsoft
+        "com.microsoft.teams": "Microsoft", "com.microsoft.office.outlook": "Microsoft",
+        "com.microsoft.office.word": "Microsoft", "com.microsoft.office.excel": "Microsoft",
+        "com.microsoft.office.powerpoint": "Microsoft", "com.microsoft.vscode": "Microsoft",
+        "com.microsoft.edge": "Microsoft", "com.microsoft.onedrive": "Microsoft",
+        "com.microsoft.copilot": "Microsoft",
+        // Apple
+        "com.apple.mobilesafari": "Apple", "com.apple.safari": "Apple",
+        "com.apple.mobilemail": "Apple", "com.apple.mobilecalendar": "Apple",
+        "com.apple.mobilenotes": "Apple", "com.apple.maps": "Apple",
+        "com.apple.music": "Apple", "com.apple.podcasts": "Apple",
+        "com.apple.news": "Apple", "com.apple.health": "Apple",
+        "com.apple.photos": "Apple", "com.apple.dt.xcode": "Apple",
+        // 其他
+        "com.twitter.twitter": "X Corp", "com.atebits.tweetie2": "X Corp",
+        "org.telegram.telegram": "Telegram", "org.telegram.telegrammac": "Telegram",
+        "com.discord.discord": "Discord", "com.slack.slack": "Salesforce",
+        "com.zoom.us": "Zoom", "us.zoom.videomeetings": "Zoom",
+        "com.netflix.netflix": "Netflix", "com.spotify.client": "Spotify",
+        "com.dropbox.dropbox": "Dropbox", "com.notion.id": "Notion",
+        "com.figma.desktop": "Figma", "com.docker.docker": "Docker",
+        "com.openai.chatgpt": "OpenAI", "com.anthropic.claude": "Anthropic",
+        "com.todesktop.230313mzl4w4u92": "Anysphere",
+        "com.microsoft.vscodium": "VSCodium",
+        "org.mozilla.firefox": "Mozilla",
+        "com.brave.browser": "Brave Software",
+        "com.arc.app": "The Browser Company",
+        "com.raycast.macos": "Raycast",
+    ]
+
+    // MARK: - 分类元数据表（bundleID 小写 → AppCategory）
+    private static let categoryTable: [String: AppCategory] = [
+        // 社交
+        "com.tencent.xin": .social, "com.tencent.wechat": .social,
+        "com.tencent.qq": .social, "com.tencent.enterprise": .social,
+        "com.bytedance.lark": .social, "com.facebook.facebook": .social,
+        "com.instagram.instagram": .social, "com.facebook.threads": .social,
+        "com.twitter.twitter": .social, "com.atebits.tweetie2": .social,
+        "jp.naver.line": .social, "com.kakao.talk": .social,
+        "com.linkedin.linkedin": .social, "com.snapchat.snapchat": .social,
+        "com.reddit.reddit": .social, "com.pinterest.pinterest": .social,
+        // 通讯
+        "org.telegram.telegram": .messaging, "org.telegram.telegrammac": .messaging,
+        "com.facebook.whatsapp": .messaging, "com.whatsapp.whatsapp": .messaging,
+        "com.signal.ios": .messaging, "com.discord.discord": .messaging,
+        "com.viber.viber": .messaging, "com.tencent.qqmail": .messaging,
+        "com.microsoft.teams": .messaging, "com.zoom.us": .messaging,
+        "us.zoom.videomeetings": .messaging, "com.slack.slack": .messaging,
+        "com.skype.skype": .messaging, "com.apple.mobilemessages": .messaging,
+        "com.apple.mobilefacetime": .messaging, "com.apple.facetime": .messaging,
+        // 视频
+        "com.tencent.tenvideo": .video, "com.youku.youku": .video,
+        "com.iqiyi.iphone": .video, "com.hunantv.imgo": .video,
+        "tv.danmaku.bilibili": .video, "com.bilibili.app.main": .video,
+        "com.netflix.netflix": .video, "com.google.youtube": .video,
+        "com.youtube.youtube": .video, "com.hulu.plus": .video,
+        "com.disneyplus.disneyplus": .video, "com.twitch.twitch": .video,
+        "com.amazon.prime.video": .video, "com.plex.plex": .video,
+        "com.apple.mobiletv": .video,
+        // 音乐
+        "com.tencent.qqmusic": .music, "com.netease.cloudmusic": .music,
+        "com.kugou.kugoumusic": .music, "cn.kuwo.player": .music,
+        "com.spotify.client": .music, "com.apple.music": .music,
+        "com.apple.podcasts": .music, "com.ximalaya.ting.iphone": .music,
+        // 购物
+        "com.alibaba.taobao": .shopping, "com.alibaba.tmall": .shopping,
+        "com.360buy.jdmobile": .shopping, "com.xunmeng.pinduoduo": .shopping,
+        "com.temu.temu": .shopping, "com.amazon.mobile.shopping.wood": .shopping,
+        "com.shopify.shopify": .shopping,
+        // 金融
+        "com.alibaba.alipay": .finance, "com.alipay.iphoneclient": .finance,
+        "com.cmbchina.cmbmob": .finance, "com.icbc.mobilebanking": .finance,
+        "com.unionpay.uppay": .finance, "com.eastmoney.iphone": .finance,
+        "com.futu.futuopen": .finance, "com.paypal.here": .finance,
+        "com.squareup.cash": .finance, "com.coinbase.coinbase": .finance,
+        // 出行
+        "com.sdu.didi.pphone": .travel, "com.amap.maps": .travel,
+        "com.uber.uberfleet": .travel, "com.lyft.ios": .travel,
+        "com.airbnb.app": .travel, "com.ctrip.iphone": .travel,
+        "com.google.maps": .travel, "com.apple.maps": .travel,
+        // 浏览器
+        "com.google.chrome": .browser, "com.apple.mobilesafari": .browser,
+        "com.apple.safari": .browser, "org.mozilla.firefox": .browser,
+        "com.microsoft.edge": .browser, "com.opera.opera": .browser,
+        "com.brave.browser": .browser, "com.arc.app": .browser,
+        "com.vivaldi.vivaldi": .browser,
+        // 开发
+        "com.microsoft.vscode": .development, "com.apple.dt.xcode": .development,
+        "com.jetbrains.intellij": .development, "com.docker.docker": .development,
+        "com.postmanlabs.postman": .development, "io.tableplus.tableplus": .development,
+        "com.proxyman.proxymandebug": .development, "com.charlesproxy.charles": .development,
+        "com.todesktop.230313mzl4w4u92": .development,
+        "com.googlecode.iterm2": .development, "io.alacritty.alacritty": .development,
+        "dev.warp.warp-stable": .development, "com.figma.desktop": .development,
+        // 效率
+        "com.alibaba.dingtalk": .productivity, "com.tencent.wemeet": .productivity,
+        "com.notion.id": .productivity, "com.obsidian.md": .productivity,
+        "md.obsidian": .productivity, "com.dropbox.dropbox": .productivity,
+        "com.evernote.evernote": .productivity, "com.box.box": .productivity,
+        "com.raycast.macos": .productivity, "com.alfred.alfred": .productivity,
+        // 安全
+        "com.agilebits.onepassword-osx": .security, "com.bitwarden.desktop": .security,
+        "com.tailscale.macos": .security, "com.wireguard.macos": .security,
+        "com.nordvpn.macos": .security, "com.expressvpn.expressvpn": .security,
+        // 教育
+        "com.yuanfudao.ios": .education, "com.zuoyebang.app": .education,
+        "com.netease.tycube": .education, "com.youdao.youdaodict": .education,
+        // 系统（Apple 系统应用）
+        "com.apple.mobilemail": .system, "com.apple.mobilecalendar": .system,
+        "com.apple.mobilenotes": .system, "com.apple.health": .system,
+        "com.apple.photos": .system, "com.apple.music": .system,
+        "com.apple.news": .system, "com.apple.stocks": .system,
+        "com.apple.findmy": .system, "com.apple.shortcuts": .system,
+        "com.apple.appstore": .system,
+    ]
 
     // MARK: 国内常用 App
     private static let chinese: [String: String] = [
