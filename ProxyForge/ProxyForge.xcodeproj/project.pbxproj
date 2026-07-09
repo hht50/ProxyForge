@@ -10,6 +10,7 @@
 		175BAF37D7E777B8480CECC3 /* DomainUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233E41740A59B37B19A98619 /* DomainUtils.swift */; };
 		2033A91E3679DBF86F237699 /* DomainFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BB676708EDADE08F0DC74D6 /* DomainFilter.swift */; };
 		27CE755B883648D0B1E5125F /* UserSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72F56D2E133C29CAAF7D58A1 /* UserSettings.swift */; };
+		EE99FF0011223344AABB5566 /* RuleExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0011223344AABB5566EE99 /* RuleExport.swift */; };
 		375B98C9E64D8DB4BA10B11C /* AppSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F3602FD4850717D3706755 /* AppSidebarView.swift */; };
 		4FA7503F4373181D70907CCC /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17E0E0BDCAFFEFC8271A91F1 /* ContentViewModel.swift */; };
 		58B04B613755493C820A93F3 /* RuleFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6FFD20E8B4BF4F0F805419 /* RuleFormatters.swift */; };
@@ -36,6 +37,7 @@
 		5DBEC31B10AF369BA053ACCA /* ReportParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportParser.swift; sourceTree = "<group>"; };
 		709440305D5815BB92CDDEEA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		72F56D2E133C29CAAF7D58A1 /* UserSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserSettings.swift; sourceTree = "<group>"; };
+		FF0011223344AABB5566EE99 /* RuleExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuleExport.swift; sourceTree = "<group>"; };
 		88F3602FD4850717D3706755 /* AppSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebarView.swift; sourceTree = "<group>"; };
 		8BB676708EDADE08F0DC74D6 /* DomainFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainFilter.swift; sourceTree = "<group>"; };
 		8D57094CC97C3A76457FA5ED /* ProxyForgeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyForgeApp.swift; sourceTree = "<group>"; };
@@ -80,6 +82,7 @@
 				BB22CC33DD44EE55FF6677AA /* AppIdentityResolver.swift */,
 				233E41740A59B37B19A98619 /* DomainUtils.swift */,
 				AF27D7E0FCFF8022D350DDAF /* KnownApps.swift */,
+				FF0011223344AABB5566EE99 /* RuleExport.swift */,
 				72F56D2E133C29CAAF7D58A1 /* UserSettings.swift */,
 			);
 			path = Utils;
@@ -215,6 +218,7 @@
 				69E1750D56E6C3C5D462E879 /* ProxyForgeApp.swift in Sources */,
 				8533F96C01FB34E4E2072A72 /* ReportParser.swift in Sources */,
 				58B04B613755493C820A93F3 /* RuleFormatters.swift in Sources */,
+				EE99FF0011223344AABB5566 /* RuleExport.swift in Sources */,
 				A514CEBE924EB20EE905C69D /* RuleOptions.swift in Sources */,
 				A240F6623BF6653A8BCE671D /* RulePreviewView.swift in Sources */,
 				63019619830D12C80F31E65E /* StatusBarView.swift in Sources */,

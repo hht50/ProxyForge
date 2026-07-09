@@ -68,6 +68,24 @@ struct AppTableView: View {
             }
             .width(52)
 
+            // ── 独占域名（不与其他 App 共享）────────────────────────────────────
+            TableColumn("独占", value: \.exclusiveDomainCount) { app in
+                Text("\(app.exclusiveDomainCount)")
+                    .monospacedDigit()
+                    .foregroundStyle(app.exclusiveDomainCount > 0 ? Color.primary : Color.secondary.opacity(0.4))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .width(52)
+
+            // ── 共享域名（被 ≥2 个 App 访问）────────────────────────────────────
+            TableColumn("共享", value: \.sharedDomainCount) { app in
+                Text(app.sharedDomainCount > 0 ? "\(app.sharedDomainCount)" : "—")
+                    .monospacedDigit()
+                    .foregroundStyle(app.sharedDomainCount > 0 ? Color.teal : Color.secondary.opacity(0.4))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .width(52)
+
             // ── 访问次数 ──────────────────────────────────────────────────────
             TableColumn("访问", value: \.totalHits) { app in
                 Text("\(app.totalHits)")

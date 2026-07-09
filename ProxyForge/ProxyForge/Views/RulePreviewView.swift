@@ -5,7 +5,8 @@ import AppKit
 
 /// 右侧主面板：标题/选中信息 + 操作按钮 + NSTextView 规则预览。
 struct RulePreviewView: View {
-    @EnvironmentObject private var vm: ContentViewModel
+    @EnvironmentObject private var vm:       ContentViewModel
+    @EnvironmentObject private var settings: UserSettings
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,7 +25,7 @@ struct RulePreviewView: View {
                 .font(.headline)
                 .foregroundStyle(.tint)
 
-            // 当前格式 badge
+            // 当前预览格式 badge
             Text(vm.formatter.displayName)
                 .font(.caption)
                 .padding(.horizontal, 6)
@@ -39,8 +40,9 @@ struct RulePreviewView: View {
 
             Spacer()
 
-            // 复制区
+            // ── 选中操作组 ──────────────────────────────────────────────
             HStack(spacing: 4) {
+                // 复制选中（⌘⇧C）
                 Button {
                     vm.copySelected()
                 } label: {
@@ -50,32 +52,31 @@ struct RulePreviewView: View {
                 .disabled(vm.selectedIDs.isEmpty)
                 .keyboardShortcut("c", modifiers: [.command, .shift])
 
-                Button {
-                    vm.copyAll()
-                } label: {
-                    Label("复制全部", systemImage: "doc.on.clipboard")
-                }
-                .help("复制全部应用的合并规则")
+                // 导出选中 — pull-down Menu（⌘E 触发当前导出格式）
+                exportSelectedMenu
+                    .keyboardShortcut("e")
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
 
             Divider().frame(height: 16)
 
-            // 导出区
+            // ── 全部操作组 ──────────────────────────────────────────────
             HStack(spacing: 4) {
-                exportSelectedButton
-                    .controlSize(.small)
-
+                // 复制全部
                 Button {
-                    vm.exportAll()
+                    vm.copyAll()
                 } label: {
-                    Label("导出全部", systemImage: "tray.and.arrow.down")
+                    Label("复制全部", systemImage: "doc.on.clipboard")
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help("将全部应用的规则导出为单个文件")
+                .help("复制全部应用的合并规则")
+                .disabled(vm.apps.isEmpty)
+
+                // 导出全部 — pull-down Menu
+                exportAllMenu
             }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -83,20 +84,105 @@ struct RulePreviewView: View {
 
     // ── 规则行数计算（从当前 ruleText 实时统计）────────────────────────────────
 
-    /// DOMAIN-SUFFIX / DOMAIN / DOMAIN-KEYWORD / IP-CIDR 行数之和
+    /// DOMAIN-SUFFIX / DOMAIN / DOMAIN-KEYWORD / IP-CIDR / IP-ASN 行数之和
     private var ruleLineCount: Int {
         vm.ruleText.components(separatedBy: "\n")
             .filter { line in
                 let t = line.trimmingCharacters(in: .whitespaces)
                 return t.hasPrefix("DOMAIN") || t.hasPrefix("IP-CIDR") || t.hasPrefix("IP-ASN")
+                    || t.hasPrefix("host-suffix") || t.hasPrefix("ip-cidr")
             }.count
     }
 
-    /// 仅 DOMAIN 类行数（不含 IP）
+    /// 仅 DOMAIN / host-suffix 类行数（不含 IP）
     private var domainLineCount: Int {
         vm.ruleText.components(separatedBy: "\n")
-            .filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("DOMAIN") }
-            .count
+            .filter {
+                let t = $0.trimmingCharacters(in: .whitespaces)
+                return t.hasPrefix("DOMAIN") || t.hasPrefix("host-suffix")
+            }.count
+    }
+
+    // ── 导出格式辅助 ──────────────────────────────────────────────────────────
+
+    private var currentExportFormat: ExportFormat {
+        ExportFormat(rawValue: settings.exportFormatIdx) ?? .loon
+    }
+
+    private func setExportFormat(_ fmt: ExportFormat) {
+        settings.exportFormatIdx = fmt.rawValue
+    }
+
+    // ── 导出选中 Menu ─────────────────────────────────────────────────────────
+
+    private var exportSelectedMenu: some View {
+        let count   = vm.selectedIDs.count
+        let isMulti = count > 1
+        let scope   = ExportScope.selected(vm.selectedApps)
+
+        return Menu {
+            // 区分 section 标题
+            Text(isMulti ? "导出 \(count) 个应用" : "导出选中应用")
+            Divider()
+
+            ForEach(ExportFormat.allCases) { fmt in
+                Button {
+                    setExportFormat(fmt)
+                    vm.export(scope: scope, format: fmt)
+                } label: {
+                    if fmt == currentExportFormat {
+                        Label(isMulti ? "\(fmt.displayName) ZIP" : fmt.displayName,
+                              systemImage: "checkmark")
+                    } else {
+                        Text(isMulti ? "\(fmt.displayName) ZIP" : fmt.displayName)
+                    }
+                }
+            }
+
+            Divider()
+
+            Button {
+                vm.exportAllFormats(scope: scope)
+            } label: {
+                Label("所有格式", systemImage: isMulti ? "archivebox" : "square.and.arrow.up.on.square")
+            }
+        } label: {
+            Label("导出选中", systemImage: "square.and.arrow.up")
+        }
+        .disabled(count == 0)
+    }
+
+    // ── 导出全部 Menu ─────────────────────────────────────────────────────────
+
+    private var exportAllMenu: some View {
+        Menu {
+            Text("导出全部规则")
+            Divider()
+
+            ForEach(ExportFormat.allCases) { fmt in
+                Button {
+                    setExportFormat(fmt)
+                    vm.export(scope: .all, format: fmt)
+                } label: {
+                    if fmt == currentExportFormat {
+                        Label(fmt.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(fmt.displayName)
+                    }
+                }
+            }
+
+            Divider()
+
+            Button {
+                vm.exportAllFormats(scope: .all)
+            } label: {
+                Label("所有格式", systemImage: "square.and.arrow.up.on.square")
+            }
+        } label: {
+            Label("导出全部", systemImage: "tray.and.arrow.down")
+        }
+        .disabled(vm.apps.isEmpty)
     }
 
     // ── 选中标题（动态内容）─────────────────────────────────────────────────
@@ -172,30 +258,6 @@ struct RulePreviewView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-
-    // ── 导出选中按钮（动态标签 + ⌘E 快捷键）────────────────────────────────────
-
-    private var exportSelectedButton: some View {
-        let count   = vm.selectedIDs.count
-        let isMulti = count > 1
-        let label   = isMulti
-            ? "导出选中 (\(count)) .zip"
-            : "导出选中 .\(vm.formatter.fileExtension)"
-        let icon    = isMulti ? "archivebox" : "square.and.arrow.up"
-        let tip     = isMulti
-            ? "将 \(count) 个选中应用分别生成规则文件，打包为 ZIP ⌘E"
-            : "将选中应用的规则导出为 .\(vm.formatter.fileExtension) 文件 ⌘E"
-
-        return Button {
-            vm.exportSelected()
-        } label: {
-            Label(label, systemImage: icon)
-        }
-        .buttonStyle(.borderedProminent)
-        .disabled(count == 0)
-        .help(tip)
-        .keyboardShortcut("e")
-    }
 }
 
 // MARK: - 规则统计 Badge
@@ -251,7 +313,7 @@ struct MonoTextView: NSViewRepresentable {
         textView.font              = Self.monoFont
         textView.isEditable        = false
         textView.isSelectable      = true
-        textView.isRichText        = false   // 保持 false；我们通过 NSTextStorage 手动设置属性
+        textView.isRichText        = false
         textView.usesFindBar       = true    // Cmd+F 全文搜索
 
         // 横向滚动：禁用宽度跟随，允许长行横向展开
@@ -289,7 +351,6 @@ struct MonoTextView: NSViewRepresentable {
             return
         }
         let newAttr = NSAttributedString(string: newText, attributes: textAttrs)
-        // beginEditing / endEditing 确保一次 layout pass，不产生中间空白帧
         storage.beginEditing()
         storage.replaceCharacters(
             in: NSRange(location: 0, length: storage.length),
