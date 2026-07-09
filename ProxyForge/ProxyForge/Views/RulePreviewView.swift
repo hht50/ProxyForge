@@ -32,6 +32,11 @@ struct RulePreviewView: View {
                 .background(Color.accentColor.opacity(0.12), in: Capsule())
                 .foregroundStyle(.tint)
 
+            // 规则统计 badge（有内容时显示）
+            if !vm.selectedIDs.isEmpty, ruleLineCount > 0 {
+                RuleStatBadge(rules: ruleLineCount, domains: domainLineCount)
+            }
+
             Spacer()
 
             // 复制区
@@ -41,8 +46,9 @@ struct RulePreviewView: View {
                 } label: {
                     Label("复制选中", systemImage: "doc.on.doc")
                 }
-                .help("复制当前预览的规则文本")
+                .help("复制当前预览的规则文本 ⌘⇧C")
                 .disabled(vm.selectedIDs.isEmpty)
+                .keyboardShortcut("c", modifiers: [.command, .shift])
 
                 Button {
                     vm.copyAll()
@@ -73,6 +79,24 @@ struct RulePreviewView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    // ── 规则行数计算（从当前 ruleText 实时统计）────────────────────────────────
+
+    /// DOMAIN-SUFFIX / DOMAIN / DOMAIN-KEYWORD / IP-CIDR 行数之和
+    private var ruleLineCount: Int {
+        vm.ruleText.components(separatedBy: "\n")
+            .filter { line in
+                let t = line.trimmingCharacters(in: .whitespaces)
+                return t.hasPrefix("DOMAIN") || t.hasPrefix("IP-CIDR") || t.hasPrefix("IP-ASN")
+            }.count
+    }
+
+    /// 仅 DOMAIN 类行数（不含 IP）
+    private var domainLineCount: Int {
+        vm.ruleText.components(separatedBy: "\n")
+            .filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("DOMAIN") }
+            .count
     }
 
     // ── 选中标题（动态内容）─────────────────────────────────────────────────
@@ -114,7 +138,7 @@ struct RulePreviewView: View {
                 Text("尚未加载任何报告")
                     .font(.title3.weight(.medium))
                     .foregroundStyle(.secondary)
-                Text("点击工具栏「打开文件」导入 App_Privacy_Report_v4_*.ndjson")
+                Text("点击工具栏「打开文件」导入，或将文件拖入窗口")
                     .font(.callout)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
@@ -149,18 +173,18 @@ struct RulePreviewView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // ── 导出选中按钮（动态标签）──────────────────────────────────────────────
+    // ── 导出选中按钮（动态标签 + ⌘E 快捷键）────────────────────────────────────
 
     private var exportSelectedButton: some View {
-        let count  = vm.selectedIDs.count
+        let count   = vm.selectedIDs.count
         let isMulti = count > 1
-        let label  = isMulti
+        let label   = isMulti
             ? "导出选中 (\(count)) .zip"
             : "导出选中 .\(vm.formatter.fileExtension)"
-        let icon   = isMulti ? "archivebox" : "square.and.arrow.up"
-        let tip    = isMulti
-            ? "将 \(count) 个选中应用分别生成规则文件，打包为 ZIP"
-            : "将选中应用的规则导出为 .\(vm.formatter.fileExtension) 文件"
+        let icon    = isMulti ? "archivebox" : "square.and.arrow.up"
+        let tip     = isMulti
+            ? "将 \(count) 个选中应用分别生成规则文件，打包为 ZIP ⌘E"
+            : "将选中应用的规则导出为 .\(vm.formatter.fileExtension) 文件 ⌘E"
 
         return Button {
             vm.exportSelected()
@@ -170,6 +194,37 @@ struct RulePreviewView: View {
         .buttonStyle(.borderedProminent)
         .disabled(count == 0)
         .help(tip)
+        .keyboardShortcut("e")
+    }
+}
+
+// MARK: - 规则统计 Badge
+
+private struct RuleStatBadge: View {
+    let rules:   Int
+    let domains: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            statItem(value: rules,   label: "rules")
+            if domains < rules {
+                statItem(value: domains, label: "domains")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(.quaternary, in: Capsule())
+    }
+
+    private func statItem(value: Int, label: String) -> some View {
+        HStack(spacing: 2) {
+            Text(value.formatted())
+                .font(.caption2.monospacedDigit().weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
     }
 }
 

@@ -39,7 +39,17 @@ final class ContentViewModel: ObservableObject {
     init(settings: UserSettings) {
         self.settings = settings
         Logger.ui.debug("ContentViewModel 初始化")
+        // 预热 L1：从上次会话保存的 bundleID 列表加载 L2→L1，避免冷启动首屏等待
+        let savedIDs = UserDefaults.standard.stringArray(forKey: Self.bundleIDsCacheKey) ?? []
+        if !savedIDs.isEmpty {
+            Task.detached(priority: .background) {
+                AppIdentityResolver.shared.preload(bundleIDs: savedIDs)
+            }
+        }
     }
+
+    // UserDefaults key — 存储上次解析的所有 bundleID，供下次启动预热用
+    private static let bundleIDsCacheKey = "com.proxyforge.lastBundleIDs"
 
     // ── 派生属性 ──────────────────────────────────────────────────────────────
 
@@ -73,6 +83,17 @@ final class ContentViewModel: ObservableObject {
 
     // ── 文件操作 ──────────────────────────────────────────────────────────────
 
+    /// 接收 Finder 拖放的文件（过滤非 .ndjson 格式）
+    func loadDroppedFiles(_ urls: [URL]) {
+        let valid = urls.filter { $0.pathExtension.lowercased() == "ndjson" }
+        guard !valid.isEmpty else {
+            statusText = "⚠ 请拖入 App_Privacy_Report_v4_*.ndjson 文件"
+            return
+        }
+        fileURLs = valid
+        loadFiles()
+    }
+
     func openFilePicker() {
         let panel = NSOpenPanel()
         panel.title = "选择 App Privacy Report 文件（可多选合并）"
@@ -104,6 +125,10 @@ final class ContentViewModel: ObservableObject {
                 let shared    = Self.computeSharedDomains(from: result)
                 // 预计算含共享域名的 App ID 集合（在后台线程做，避免主线程压力）
                 let withShared = Self.computeAppsWithSharedDomains(apps: result, sharedKeys: Set(shared.keys))
+
+                // 持久化 bundleIDs，供下次启动预热 L1（非主线程操作，不阻塞 UI）
+                let bundleIDs = result.map(\.id)
+                UserDefaults.standard.set(bundleIDs, forKey: Self.bundleIDsCacheKey)
 
                 await MainActor.run {
                     self.apps                  = result

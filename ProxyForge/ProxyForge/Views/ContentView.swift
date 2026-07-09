@@ -1,10 +1,17 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - 主视图（布局协调器）
 
 /// HSplitView 布局：左侧 AppSidebarView，右侧 RulePreviewView。
 /// 底部固定 StatusBarView 显示状态文字和加载指示器。
+/// 支持从 Finder 拖入 .ndjson 文件。
 struct ContentView: View {
+    @EnvironmentObject private var vm: ContentViewModel
+
+    /// 拖放悬停时高亮边框
+    @State private var isDragTargeted = false
+
     var body: some View {
         VStack(spacing: 0) {
             OptionsBarView()
@@ -15,6 +22,12 @@ struct ContentView: View {
                 RulePreviewView()
                     .frame(minWidth: 420)
             }
+            .onDrop(of: [UTType.fileURL], isTargeted: $isDragTargeted) { providers in
+                handleDrop(providers: providers)
+            }
+            .overlay(alignment: .center) {
+                if isDragTargeted { dropHighlight }
+            }
             Divider()
             StatusBarView()
         }
@@ -22,7 +35,46 @@ struct ContentView: View {
         .frame(minWidth: 920, minHeight: 560)
     }
 
+    // ── 拖放处理 ─────────────────────────────────────────────────────────────
+
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        var urls: [URL] = []
+        let group = DispatchGroup()
+        for provider in providers {
+            group.enter()
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url { urls.append(url) }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            vm.loadDroppedFiles(urls)
+        }
+        return true
+    }
+
+    // ── 拖放悬停高亮 ──────────────────────────────────────────────────────────
+
+    private var dropHighlight: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(Color.accentColor, lineWidth: 2)
+            .background(Color.accentColor.opacity(0.04).clipShape(RoundedRectangle(cornerRadius: 10)))
+            .overlay {
+                VStack(spacing: 8) {
+                    Image(systemName: "arrow.down.doc")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.tint)
+                    Text("拖入 .ndjson 文件")
+                        .font(.headline)
+                        .foregroundStyle(.tint)
+                }
+            }
+            .padding(12)
+            .allowsHitTesting(false)
+    }
+
     // ── 工具栏 ────────────────────────────────────────────────────────────────
+
     @ToolbarContentBuilder
     private var toolbarItems: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
@@ -45,7 +97,8 @@ private struct OpenFileButton: View {
         Button { vm.openFilePicker() } label: {
             Label("打开文件", systemImage: "folder.badge.plus")
         }
-        .help("打开 App_Privacy_Report_v4_*.ndjson（可多选合并）")
+        .help("打开 App_Privacy_Report_v4_*.ndjson（可多选合并）⌘O")
+        .keyboardShortcut("o")
     }
 }
 
@@ -56,29 +109,16 @@ private struct RefreshButton: View {
             Label("刷新", systemImage: "arrow.clockwise")
         }
         .disabled(vm.fileURLs.isEmpty || vm.isLoading)
-        .help("重新解析已加载的文件")
+        .help("重新解析已加载的文件 ⌘R")
+        .keyboardShortcut("r")
     }
 }
 
 private struct AboutButton: View {
     var body: some View {
-        Button { showAbout() } label: {
+        Button { NSApp.orderFrontStandardAboutPanel(nil) } label: {
             Label("关于", systemImage: "info.circle")
         }
-    }
-
-    private func showAbout() {
-        let alert = NSAlert()
-        alert.messageText     = "ProxyForge"
-        alert.informativeText = """
-            基于 iOS App 隐私报告 (App Privacy Report)
-            分析网络访问记录，生成 Loon / Surge / Quantumult X / Clash 分流规则
-
-            数据来源：iPhone → 设置 → 隐私与安全性 → App 隐私报告
-            """
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "好")
-        alert.runModal()
     }
 }
 
