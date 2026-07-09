@@ -27,6 +27,12 @@ final class ContentViewModel: ObservableObject {
     /// domain → [bundleID]；仅包含被 ≥2 个 App 访问的域名
     @Published private(set) var sharedDomainApps: [String: [String]] = [:]
 
+    /// 含共享域名的 App ID 集合（预计算，供 AppTableView 每行 O(1) 查找）
+    @Published private(set) var appsWithSharedDomains: Set<String> = []
+
+    // ── 预览生成任务（异步取消用）──────────────────────────────────────────────
+    private var previewTask: Task<Void, Never>?
+
     // ── 对设置的引用（由外部注入）────────────────────────────────────────────
     let settings: UserSettings
 
@@ -54,7 +60,7 @@ final class ContentViewModel: ObservableObject {
     var options: RuleOptions {
         let level = OptimizationLevel(rawValue: settings.optimizationLevel) ?? .smart
         return RuleOptions(
-            mergeSub:          level == .minimal,   // minimal 级别隐式开启根域合并
+            mergeSub:          level == .minimal,
             proxyTarget:       settings.proxyName,
             includeIPs:        settings.includeIPs,
             sharedDomains:     [],
@@ -92,15 +98,20 @@ final class ContentViewModel: ObservableObject {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
-                let result = try await parseReports(urls: urls, filterSystem: filterSystem)
-                let doms   = result.reduce(0) { $0 + $1.domainCount }
-                let hits   = result.reduce(0) { $0 + $1.totalHits }
+                let result    = try await parseReports(urls: urls, filterSystem: filterSystem)
+                let doms      = result.reduce(0) { $0 + $1.domainCount }
+                let hits      = result.reduce(0) { $0 + $1.totalHits }
+                let shared    = Self.computeSharedDomains(from: result)
+                // 预计算含共享域名的 App ID 集合（在后台线程做，避免主线程压力）
+                let withShared = Self.computeAppsWithSharedDomains(apps: result, sharedKeys: Set(shared.keys))
+
                 await MainActor.run {
-                    self.apps             = result
-                    self.sharedDomainApps = Self.computeSharedDomains(from: result)
-                    self.isLoading        = false
+                    self.apps                  = result
+                    self.sharedDomainApps      = shared
+                    self.appsWithSharedDomains = withShared
+                    self.isLoading             = false
                     let filePart   = urls.count > 1 ? "\(urls.count) 个文件  ·  " : ""
-                    let sharedPart = self.sharedDomainApps.isEmpty ? "" : "  ·  \(self.sharedDomainApps.count) 共享域名"
+                    let sharedPart = shared.isEmpty ? "" : "  ·  \(shared.count) 共享域名"
                     self.statusText = "✓  \(filePart)\(result.count) 个应用  ·  \(doms) 个域名  ·  \(hits) 次访问\(sharedPart)"
                     self.refreshPreview()
                 }
@@ -114,15 +125,37 @@ final class ContentViewModel: ObservableObject {
         }
     }
 
-    // ── 预览刷新 ──────────────────────────────────────────────────────────────
+    // ── 预览刷新（异步 + 自动取消旧任务）────────────────────────────────────────
 
     func refreshPreview() {
-        guard let app = selectedApp else { return }
-        // 预览：独占域名作为活跃规则，共享域名以注释显示（帮助用户分辨）
-        var opts = options
-        opts.sharedDomains = Set(sharedDomainApps.keys)
-        ruleText = formatter.formatOne(app: app, options: opts)
-        Logger.ui.debug("刷新预览: \(app.bundleID, privacy: .public)")
+        // 取消上一个未完成的格式化任务，避免旧结果覆盖新结果
+        previewTask?.cancel()
+
+        guard let app = selectedApp else {
+            ruleText = "← 点击左侧应用列表，查看该应用的分流规则"
+            return
+        }
+
+        // 立即给出占位文字，防止切换时出现空白
+        ruleText = "正在生成 \(app.name) 的规则预览…"
+
+        // 捕获所有需要的值，Task.detached 中不能访问 MainActor 属性
+        let capturedApp       = app
+        let capturedFormatter = formatter
+        var capturedOptions   = options
+        capturedOptions.sharedDomains = Set(sharedDomainApps.keys)
+
+        previewTask = Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            // CPU 密集的格式化在后台线程执行
+            let text = capturedFormatter.formatOne(app: capturedApp, options: capturedOptions)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard !Task.isCancelled else { return }
+                self.ruleText = text
+                Logger.ui.debug("预览已更新: \(capturedApp.bundleID, privacy: .public)")
+            }
+        }
     }
 
     // ── 独占域名过滤 ──────────────────────────────────────────────────────────
@@ -136,9 +169,17 @@ final class ContentViewModel: ObservableObject {
         return AppEntry(id: app.id, name: app.name, domains: doms, totalHits: hits)
     }
 
+    /// 纯函数版本，可在后台线程调用（不访问 self）
+    nonisolated private static func filterApp(_ app: AppEntry, sharedKeys: Set<String>) -> AppEntry {
+        guard !sharedKeys.isEmpty else { return app }
+        let doms = app.domains.filter { !sharedKeys.contains($0.key) }
+        let hits = doms.values.reduce(0) { $0 + $1.hits }
+        return AppEntry(id: app.id, name: app.name, domains: doms, totalHits: hits)
+    }
+
     // ── 共享域名计算 ──────────────────────────────────────────────────────────
 
-    private static func computeSharedDomains(from apps: [AppEntry]) -> [String: [String]] {
+    nonisolated private static func computeSharedDomains(from apps: [AppEntry]) -> [String: [String]] {
         var map = [String: Set<String>]()
         for app in apps {
             for domain in app.domains.keys {
@@ -148,6 +189,21 @@ final class ContentViewModel: ObservableObject {
         var result = [String: [String]]()
         for (domain, ids) in map where ids.count >= 2 {
             result[domain] = Array(ids)
+        }
+        return result
+    }
+
+    /// 预计算含共享域名的 App ID 集合（O(n×d)，在后台线程做一次）
+    nonisolated private static func computeAppsWithSharedDomains(
+        apps: [AppEntry],
+        sharedKeys: Set<String>
+    ) -> Set<String> {
+        guard !sharedKeys.isEmpty else { return [] }
+        var result = Set<String>()
+        for app in apps {
+            if app.domains.keys.contains(where: { sharedKeys.contains($0) }) {
+                result.insert(app.id)
+            }
         }
         return result
     }
@@ -163,25 +219,35 @@ final class ContentViewModel: ObservableObject {
 
     func copyAll() {
         guard !apps.isEmpty else { statusText = "⚠ 请先加载文件"; return }
-        // 全量导出：所有域名作为活跃规则（options.sharedDomains 为空）
-        let exportApps = settings.exclusiveOnly
-            ? sortedApps.map { filteredApp($0) }
-            : sortedApps
-        let text = formatter.formatAll(apps: exportApps, options: options)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        Logger.export.info("已复制全部规则 (\(self.apps.count, privacy: .public) 个应用)")
-        statusText = "✓ 已复制全部规则（\(apps.count) 个应用）"
+        statusText = "生成全部规则中…"
+
+        // 捕获所有值，避免 Task.detached 访问 MainActor 属性
+        let capturedApps      = sortedApps
+        let capturedFormatter = formatter
+        let capturedOptions   = options
+        let capturedExclusive = settings.exclusiveOnly
+        let capturedShared    = Set(sharedDomainApps.keys)
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            let exportApps = capturedExclusive
+                ? capturedApps.map { Self.filterApp($0, sharedKeys: capturedShared) }
+                : capturedApps
+            let text = capturedFormatter.formatAll(apps: exportApps, options: capturedOptions)
+            await MainActor.run {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                Logger.export.info("已复制全部规则 (\(capturedApps.count, privacy: .public) 个应用)")
+                self.statusText = "✓ 已复制全部规则（\(capturedApps.count) 个应用）"
+            }
+        }
     }
 
     // ── 导出 ──────────────────────────────────────────────────────────────────
 
-    /// 导出选中的应用（单个 → TXT，多个 → ZIP）
     func exportSelected() {
         let targets = selectedApps
-        guard !targets.isEmpty else {
-            exportAll(); return
-        }
+        guard !targets.isEmpty else { exportAll(); return }
         if targets.count == 1 {
             exportSingle(app: targets[0])
         } else {
@@ -189,7 +255,6 @@ final class ContentViewModel: ObservableObject {
         }
     }
 
-    /// 导出全部应用（单文件）
     func exportAll() {
         guard !apps.isEmpty else { statusText = "⚠ 请先加载文件"; return }
         let panel = NSSavePanel()
@@ -197,17 +262,33 @@ final class ContentViewModel: ObservableObject {
         panel.nameFieldStringValue = "ProxyForge_\(scopeTag)_\(dateTag()).\(formatter.fileExtension)"
         if let t = UTType(filenameExtension: formatter.fileExtension) { panel.allowedContentTypes = [t] }
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let exportApps = settings.exclusiveOnly
-                ? sortedApps.map { filteredApp($0) }
-                : sortedApps
-            let text = formatter.formatAll(apps: exportApps, options: options)
-            try text.write(to: url, atomically: true, encoding: .utf8)
-            Logger.export.info("导出全部成功: \(url.lastPathComponent, privacy: .public)")
-            statusText = "✓ 已导出到 \(url.lastPathComponent)"
-        } catch {
-            Logger.export.error("导出失败: \(error.localizedDescription, privacy: .public)")
-            statusText = "❌ 导出失败: \(error.localizedDescription)"
+
+        statusText = "导出中…"
+
+        let capturedApps      = sortedApps
+        let capturedFormatter = formatter
+        let capturedOptions   = options
+        let capturedExclusive = settings.exclusiveOnly
+        let capturedShared    = Set(sharedDomainApps.keys)
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            do {
+                let exportApps = capturedExclusive
+                    ? capturedApps.map { Self.filterApp($0, sharedKeys: capturedShared) }
+                    : capturedApps
+                let text = capturedFormatter.formatAll(apps: exportApps, options: capturedOptions)
+                try text.write(to: url, atomically: true, encoding: .utf8)
+                await MainActor.run {
+                    Logger.export.info("导出全部成功: \(url.lastPathComponent, privacy: .public)")
+                    self.statusText = "✓ 已导出到 \(url.lastPathComponent)"
+                }
+            } catch {
+                await MainActor.run {
+                    Logger.export.error("导出失败: \(error.localizedDescription, privacy: .public)")
+                    self.statusText = "❌ 导出失败: \(error.localizedDescription)"
+                }
+            }
         }
     }
 
@@ -220,15 +301,33 @@ final class ContentViewModel: ObservableObject {
         panel.nameFieldStringValue = "\(safeName)_\(scopeTag)_\(dateTag()).\(formatter.fileExtension)"
         if let t = UTType(filenameExtension: formatter.fileExtension) { panel.allowedContentTypes = [t] }
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let exportApp = settings.exclusiveOnly ? filteredApp(app) : app
-            let text      = formatter.formatOne(app: exportApp, options: options)
-            try text.write(to: url, atomically: true, encoding: .utf8)
-            Logger.export.info("导出单 App 成功: \(url.lastPathComponent, privacy: .public)")
-            statusText = "✓ 已导出 \(app.name) → \(url.lastPathComponent)"
-        } catch {
-            Logger.export.error("导出失败: \(error.localizedDescription, privacy: .public)")
-            statusText = "❌ 导出失败: \(error.localizedDescription)"
+
+        statusText = "导出中…"
+
+        let capturedApp       = app
+        let capturedFormatter = formatter
+        let capturedOptions   = options
+        let capturedExclusive = settings.exclusiveOnly
+        let capturedShared    = Set(sharedDomainApps.keys)
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            do {
+                let exportApp = capturedExclusive
+                    ? Self.filterApp(capturedApp, sharedKeys: capturedShared)
+                    : capturedApp
+                let text = capturedFormatter.formatOne(app: exportApp, options: capturedOptions)
+                try text.write(to: url, atomically: true, encoding: .utf8)
+                await MainActor.run {
+                    Logger.export.info("导出单 App 成功: \(url.lastPathComponent, privacy: .public)")
+                    self.statusText = "✓ 已导出 \(capturedApp.name) → \(url.lastPathComponent)"
+                }
+            } catch {
+                await MainActor.run {
+                    Logger.export.error("导出失败: \(error.localizedDescription, privacy: .public)")
+                    self.statusText = "❌ 导出失败: \(error.localizedDescription)"
+                }
+            }
         }
     }
 
@@ -241,18 +340,22 @@ final class ContentViewModel: ObservableObject {
         if let t = UTType(filenameExtension: "zip") { panel.allowedContentTypes = [t] }
         guard panel.runModal() == .OK, let zipURL = panel.url else { return }
 
-        let capturedFormatter  = formatter
-        let capturedOptions    = options
-        let capturedExclusive  = settings.exclusiveOnly
-        let capturedFiltered   = capturedExclusive
-            ? targets.map { [weak self] app -> AppEntry in self?.filteredApp(app) ?? app }
-            : targets
+        statusText = "打包 ZIP 中…"
+
+        let capturedFormatter = formatter
+        let capturedOptions   = options
+        let capturedExclusive = settings.exclusiveOnly
+        let capturedShared    = Set(sharedDomainApps.keys)
+        let capturedTargets   = targets
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
+                let exportApps = capturedExclusive
+                    ? capturedTargets.map { Self.filterApp($0, sharedKeys: capturedShared) }
+                    : capturedTargets
                 try await Self.buildZip(
-                    apps:      capturedFiltered,
+                    apps:      exportApps,
                     formatter: capturedFormatter,
                     options:   capturedOptions,
                     scopeTag:  scopeTag,
@@ -260,7 +363,7 @@ final class ContentViewModel: ObservableObject {
                 )
                 await MainActor.run {
                     Logger.export.info("ZIP 导出成功: \(zipURL.lastPathComponent, privacy: .public)")
-                    self.statusText = "✓ 已导出 \(targets.count) 个应用 → \(zipURL.lastPathComponent)"
+                    self.statusText = "✓ 已导出 \(capturedTargets.count) 个应用 → \(zipURL.lastPathComponent)"
                 }
             } catch {
                 await MainActor.run {
@@ -271,7 +374,6 @@ final class ContentViewModel: ObservableObject {
         }
     }
 
-    /// 将多个 App 规则写入临时目录后用系统 zip 打包
     private static func buildZip(
         apps:      [AppEntry],
         formatter: any RuleFormatter,
@@ -279,8 +381,8 @@ final class ContentViewModel: ObservableObject {
         scopeTag:  String,
         to zipURL: URL
     ) async throws {
-        let fm      = FileManager.default
-        let tmpDir  = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let fm     = FileManager.default
+        let tmpDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try fm.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: tmpDir) }
 
@@ -294,14 +396,12 @@ final class ContentViewModel: ObservableObject {
             filePaths.append(fileURL.path)
         }
 
-        // 如果目标 zip 已存在，先删除（zip 工具会追加而不是覆盖）
         if fm.fileExists(atPath: zipURL.path) {
             try fm.removeItem(at: zipURL)
         }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-        // -j: junk paths（只保留文件名，不保留目录层级）
         process.arguments = ["-j", zipURL.path] + filePaths
         try process.run()
         process.waitUntilExit()

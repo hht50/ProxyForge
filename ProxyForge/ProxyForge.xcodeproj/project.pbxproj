@@ -10,8 +10,10 @@
 		175BAF37D7E777B8480CECC3 /* DomainUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233E41740A59B37B19A98619 /* DomainUtils.swift */; };
 		2033A91E3679DBF86F237699 /* DomainFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BB676708EDADE08F0DC74D6 /* DomainFilter.swift */; };
 		27CE755B883648D0B1E5125F /* UserSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72F56D2E133C29CAAF7D58A1 /* UserSettings.swift */; };
+		375B98C9E64D8DB4BA10B11C /* AppSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F3602FD4850717D3706755 /* AppSidebarView.swift */; };
 		4FA7503F4373181D70907CCC /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17E0E0BDCAFFEFC8271A91F1 /* ContentViewModel.swift */; };
 		58B04B613755493C820A93F3 /* RuleFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6FFD20E8B4BF4F0F805419 /* RuleFormatters.swift */; };
+		63019619830D12C80F31E65E /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BE3836F56C5724B1371CFCE /* StatusBarView.swift */; };
 		69E1750D56E6C3C5D462E879 /* ProxyForgeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D57094CC97C3A76457FA5ED /* ProxyForgeApp.swift */; };
 		6CD1EFB3C64144C165B52841 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 709440305D5815BB92CDDEEA /* ContentView.swift */; };
 		74A72349C92EE7D4C974FD56 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA16F6566F0AD115B333184 /* AppLogger.swift */; };
@@ -25,12 +27,14 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0BE3836F56C5724B1371CFCE /* StatusBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarView.swift; sourceTree = "<group>"; };
 		17E0E0BDCAFFEFC8271A91F1 /* ContentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewModel.swift; sourceTree = "<group>"; };
 		233E41740A59B37B19A98619 /* DomainUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainUtils.swift; sourceTree = "<group>"; };
 		3FA16F6566F0AD115B333184 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
 		5DBEC31B10AF369BA053ACCA /* ReportParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportParser.swift; sourceTree = "<group>"; };
 		709440305D5815BB92CDDEEA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		72F56D2E133C29CAAF7D58A1 /* UserSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserSettings.swift; sourceTree = "<group>"; };
+		88F3602FD4850717D3706755 /* AppSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebarView.swift; sourceTree = "<group>"; };
 		8BB676708EDADE08F0DC74D6 /* DomainFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainFilter.swift; sourceTree = "<group>"; };
 		8D57094CC97C3A76457FA5ED /* ProxyForgeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyForgeApp.swift; sourceTree = "<group>"; };
 		93F15C2109A5C1D7F85B602D /* AppEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEntry.swift; sourceTree = "<group>"; };
@@ -122,10 +126,12 @@
 		FC57F99C9E198AB78614FBEF /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				88F3602FD4850717D3706755 /* AppSidebarView.swift */,
 				B71A9BD9C18EF2E7E7A54E28 /* AppTableView.swift */,
 				709440305D5815BB92CDDEEA /* ContentView.swift */,
 				D3E58F3511DCDA24913BAAD7 /* OptionsBarView.swift */,
 				E327758C9D10F267FBE00ECC /* RulePreviewView.swift */,
+				0BE3836F56C5724B1371CFCE /* StatusBarView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -190,6 +196,7 @@
 			files = (
 				C81AB551025FF12E8B61AAC3 /* AppEntry.swift in Sources */,
 				74A72349C92EE7D4C974FD56 /* AppLogger.swift in Sources */,
+				375B98C9E64D8DB4BA10B11C /* AppSidebarView.swift in Sources */,
 				8DBBD8D93D2B42D31B9A5089 /* AppTableView.swift in Sources */,
 				6CD1EFB3C64144C165B52841 /* ContentView.swift in Sources */,
 				4FA7503F4373181D70907CCC /* ContentViewModel.swift in Sources */,
@@ -202,6 +209,7 @@
 				58B04B613755493C820A93F3 /* RuleFormatters.swift in Sources */,
 				A514CEBE924EB20EE905C69D /* RuleOptions.swift in Sources */,
 				A240F6623BF6653A8BCE671D /* RulePreviewView.swift in Sources */,
+				63019619830D12C80F31E65E /* StatusBarView.swift in Sources */,
 				27CE755B883648D0B1E5125F /* UserSettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
