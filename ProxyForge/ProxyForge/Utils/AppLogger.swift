@@ -19,4 +19,7 @@ extension Logger {
 
     /// 导出 / 剪贴板操作日志
     static let export = Logger(subsystem: subsystem, category: "export")
+
+    /// AppIdentityResolver 缓存与解析日志（🟢 内存命中 / 🔵 磁盘命中 / 🔴 NSWorkspace 解析）
+    static let resolver = Logger(subsystem: subsystem, category: "resolver")
 }

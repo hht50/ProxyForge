@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import os.log
 
 // MARK: - App Identity Resolver
 //
@@ -11,31 +12,88 @@ import AppKit
 //   5. CamelCase 拆分兜底 → 0.58
 //   6. 原始 bundleID → 0.20
 //
+// 缓存层（L1 → L2 → L3）：
+//   L1 内存缓存   — 进程内命中，0μs
+//   L2 磁盘缓存   — JSON 文件（~/Library/ApplicationSupport/ProxyForge/IdentityCache.json），
+//                   跳过 LaunchServices，只做 NSImage 重建，约 5~10ms
+//   L3 NSWorkspace — 冷路径，约 10~50ms per app；结果写回 L1 + L2
+//
 // BundleID 规范化在所有解析之前执行：
 //   剥离 .helper / .xpc / .service / .plugin / .extension / .agent 等后缀，
 //   使 com.tencent.xin.helper 和 com.tencent.xin 合并到同一个条目。
+
+// MARK: - 磁盘缓存条目（不含 NSImage）
+
+/// 可序列化的缓存条目。故意不存储 NSImage — 启动时按 bundlePath 重建，
+/// 避免占用内存和序列化开销。
+private struct CachedIdentity: Codable {
+    let canonicalBundleID: String
+    let displayName:       String
+    let developer:         String?
+    let categoryRaw:       String?   // AppCategory.rawValue
+    let bundlePath:        String?   // 本机 .app 路径，用于图标重建
+    let sourceRaw:         String    // ResolutionSource.rawValue
+    let timestamp:         Date
+
+    /// 磁盘缓存有效期：30 天。超期后触发 L3 重新解析。
+    static let expiryInterval: TimeInterval = 30 * 24 * 3600
+
+    var isExpired: Bool {
+        Date().timeIntervalSince(timestamp) > Self.expiryInterval
+    }
+
+    /// 重建 ResolvedAppIdentity。图标从 bundlePath 直接加载（跳过 LaunchServices 查询）。
+    func toResolved() -> ResolvedAppIdentity {
+        let icon = bundlePath.flatMap { NSWorkspace.shared.icon(forFile: $0) }
+        return ResolvedAppIdentity(
+            canonicalBundleID: canonicalBundleID,
+            displayName:       displayName,
+            developer:         developer,
+            category:          categoryRaw.flatMap { AppCategory(rawValue: $0) },
+            icon:              icon,
+            source:            ResolutionSource(rawValue: sourceRaw) ?? .fallback
+        )
+    }
+}
+
+// MARK: - Resolver
 
 final class AppIdentityResolver {
 
     // MARK: - Singleton
     static let shared = AppIdentityResolver()
 
-    // MARK: - Cache：normalized bundleID → ResolvedAppIdentity
-    private var cache: [String: ResolvedAppIdentity] = [:]
+    // MARK: - L1 内存缓存（normalized bundleID → ResolvedAppIdentity）
+    private var cache:     [String: ResolvedAppIdentity] = [:]
+
+    // MARK: - L2 磁盘缓存（normalized bundleID → CachedIdentity）
+    private var diskCache: [String: CachedIdentity] = [:]
+
+    /// 保护 cache + diskCache 的字典读写
     private let cacheLock = NSLock()
 
-    // MARK: - 用户覆盖（normalized bundleID → 自定义名称）
+    /// 后台磁盘写入队列（串行，防止并发写入损坏文件）
+    private let saveQueue = DispatchQueue(label: "com.proxyforge.identity.save", qos: .utility)
+
+    // MARK: - 用户覆盖（highest priority, normalized bundleID → 自定义名称）
     private var userOverrides: [String: String] = [:]
 
     private var overridesURL: URL? {
         FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first?
-            .appendingPathComponent("ProxyForge/UserOverrideApps.json")
+            .first?.appendingPathComponent("ProxyForge/UserOverrideApps.json")
+    }
+
+    private var diskCacheURL: URL? {
+        FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?.appendingPathComponent("ProxyForge/IdentityCache.json")
     }
 
     private init() {
         loadUserOverrides()
+        loadDiskCache()
+        Logger.resolver.info("初始化完成: L2磁盘缓存 \(self.diskCache.count, privacy: .public) 条")
     }
 
     // MARK: - 用户覆盖 API
@@ -44,9 +102,11 @@ final class AppIdentityResolver {
     func setUserOverride(bundleID: String, name: String) {
         let key = normalize(bundleID)
         userOverrides[key] = name
-        // 用新名称更新（或写入）缓存
         let identity = ResolvedAppIdentity.userOverride(bundleID: key, name: name)
-        cacheLock.withLock { cache[key] = identity }
+        cacheLock.withLock {
+            cache[key] = identity
+            diskCache.removeValue(forKey: key)   // 强制下次重新写入（带 userOverride source）
+        }
         saveUserOverrides()
     }
 
@@ -54,31 +114,27 @@ final class AppIdentityResolver {
     func removeUserOverride(bundleID: String) {
         let key = normalize(bundleID)
         userOverrides.removeValue(forKey: key)
-        cacheLock.withLock { cache.removeValue(forKey: key) }
+        cacheLock.withLock {
+            cache.removeValue(forKey: key)
+            diskCache.removeValue(forKey: key)
+        }
         saveUserOverrides()
     }
 
     /// 当前所有用户覆盖（规范化 bundleID → 自定义名称）。
     var allUserOverrides: [String: String] { userOverrides }
 
-    private func loadUserOverrides() {
-        guard let url = overridesURL,
-              let data = try? Data(contentsOf: url),
-              let dict = try? JSONDecoder().decode([String: String].self, from: data)
-        else { return }
-        userOverrides = dict
-    }
+    // MARK: - 预热接口
 
-    private func saveUserOverrides() {
-        guard let url = overridesURL else { return }
-        do {
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            let data = try JSONEncoder().encode(userOverrides)
-            try data.write(to: url, options: .atomic)
-        } catch { /* 写入失败不影响主功能 */ }
+    /// 批量预热 L1 内存缓存（从 L2 磁盘加载或触发 L3 解析）。
+    /// 应从后台线程调用，避免阻塞主线程。
+    /// 典型调用时机：ContentViewModel 加载报告后。
+    func preload(bundleIDs: [String]) {
+        Logger.resolver.info("预热开始: \(bundleIDs.count, privacy: .public) 个 bundleID")
+        let t0 = CFAbsoluteTimeGetCurrent()
+        for bid in bundleIDs { _ = resolveIdentity(bid) }
+        let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        Logger.resolver.info("预热完成: \(bundleIDs.count, privacy: .public) 个，耗时 \(elapsed, privacy: .public)ms")
     }
 
     // MARK: - BundleID 规范化
@@ -97,22 +153,54 @@ final class AppIdentityResolver {
             "notificationcontentextension", "fileprovidernodeprovider",
             "fileprovider", "clipboardservice", "loginitem", "launcher",
         ]
-        while let last = parts.last, stripped.contains(String(last)) {
-            parts.removeLast()
-        }
+        while let last = parts.last, stripped.contains(String(last)) { parts.removeLast() }
         let result = parts.joined(separator: ".")
         return result.isEmpty ? lowered : result
     }
 
-    // MARK: - 主解析入口
+    // MARK: - 主解析入口（三级缓存）
 
     /// 解析 bundleID，返回完整的应用身份（名称、开发者、分类、图标、置信度）。
-    /// 结果会缓存，相同 bundleID 只解析一次。
+    /// 顺序：L1 内存 → L2 磁盘 → L3 NSWorkspace（结果写回 L1 + L2）。
     func resolveIdentity(_ rawBundleID: String) -> ResolvedAppIdentity {
         let key = normalize(rawBundleID)
-        if let cached = cacheLock.withLock({ cache[key] }) { return cached }
-        let result = resolveUncached(key: key, raw: rawBundleID)
-        cacheLock.withLock { cache[key] = result }
+
+        // L1: 内存缓存 — 0μs
+        if let hit = cacheLock.withLock({ cache[key] }) {
+            Logger.resolver.debug("🟢 memory: \(key, privacy: .public)")
+            return hit
+        }
+
+        // L2: 磁盘缓存 — 跳过 LaunchServices，只重建图标
+        if let entry = cacheLock.withLock({ diskCache[key] }), !entry.isExpired {
+            Logger.resolver.debug("🔵 disk: \(key, privacy: .public) [\(entry.sourceRaw, privacy: .public)]")
+            let resolved = entry.toResolved()
+            cacheLock.withLock { cache[key] = resolved }
+            return resolved
+        }
+
+        // L3: 完整解析（NSWorkspace + 各级回退）
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let (result, bundlePath) = resolveUncached(key: key, raw: rawBundleID)
+        let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        Logger.resolver.info("🔴 resolved: \(key, privacy: .public) via \(result.source.rawValue, privacy: .public) [\(elapsed, privacy: .public)ms]")
+
+        // 写回 L1 + L2
+        let diskEntry = CachedIdentity(
+            canonicalBundleID: key,
+            displayName:       result.displayName,
+            developer:         result.developer,
+            categoryRaw:       result.category?.rawValue,
+            bundlePath:        bundlePath,
+            sourceRaw:         result.source.rawValue,
+            timestamp:         Date()
+        )
+        cacheLock.withLock {
+            cache[key]     = result
+            diskCache[key] = diskEntry
+        }
+        saveDiskCacheAsync()
+
         return result
     }
 
@@ -123,75 +211,71 @@ final class AppIdentityResolver {
 
     // MARK: - 解析链（内部）
 
-    private func resolveUncached(key: String, raw: String) -> ResolvedAppIdentity {
+    /// 返回 (identity, bundlePath)，bundlePath 供磁盘缓存条目使用。
+    private func resolveUncached(key: String, raw: String) -> (ResolvedAppIdentity, bundlePath: String?) {
 
         // Level 1: 用户自定义覆盖
         if let name = userOverrides[key] {
-            return ResolvedAppIdentity.userOverride(bundleID: key, name: name)
+            return (.userOverride(bundleID: key, name: name), bundlePath: nil)
         }
 
         // Level 2: KnownApps 静态数据库
         if let name = KnownApps.displayName(for: key) {
-            return ResolvedAppIdentity(
+            let (icon, path) = appIconAndPath(for: key) ?? (nil, nil)
+            return (ResolvedAppIdentity(
                 canonicalBundleID: key,
                 displayName:       name,
                 developer:         KnownApps.developer(for: key),
                 category:          KnownApps.category(for: key),
-                icon:              appIcon(for: key),
+                icon:              icon,
                 source:            .knownApps
-            )
+            ), bundlePath: path)
         }
 
         // Level 3: NSWorkspace LaunchServices + Info.plist
-        if let (name, icon) = appNameAndIconFromLaunchServices(key) {
-            return ResolvedAppIdentity(
+        if let (name, icon, path) = appNameAndIconFromLaunchServices(key) {
+            return (ResolvedAppIdentity(
                 canonicalBundleID: key,
                 displayName:       name,
-                developer:         developerFromBundle(key),
+                developer:         developerFromBundle(bundlePath: path),
                 category:          nil,
                 icon:              icon,
                 source:            .launchServices
-            )
+            ), bundlePath: path)
         }
 
         // Level 4: BundleID 段词典
         if let name = appNameFromSegmentDictionary(key) {
-            return ResolvedAppIdentity(
-                canonicalBundleID: key,
-                displayName:       name,
-                source:            .bundleDictionary
-            )
+            return (ResolvedAppIdentity(canonicalBundleID: key, displayName: name, source: .bundleDictionary),
+                    bundlePath: nil)
         }
 
         // Level 5: CamelCase 拆分
         if let name = camelCaseName(from: key), name != key {
-            return ResolvedAppIdentity(
-                canonicalBundleID: key,
-                displayName:       name,
-                source:            .camelCase
-            )
+            return (ResolvedAppIdentity(canonicalBundleID: key, displayName: name, source: .camelCase),
+                    bundlePath: nil)
         }
 
         // Level 6: 原始 bundleID 兜底
-        return ResolvedAppIdentity.fallback(bundleID: raw)
+        return (.fallback(bundleID: raw), bundlePath: nil)
     }
 
     // MARK: - Level 3: NSWorkspace + Info.plist
 
-    private func appNameAndIconFromLaunchServices(_ bundleID: String) -> (name: String, icon: NSImage?)? {
+    /// 返回 (displayName, icon, bundlePath)，bundlePath 供缓存重用。
+    private func appNameAndIconFromLaunchServices(_ bundleID: String) -> (name: String, icon: NSImage?, path: String)? {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
             return nil
         }
-        let icon = NSWorkspace.shared.icon(forFile: url.path)
-        // 优先读 Info.plist 的 CFBundleDisplayName / CFBundleName
+        let path = url.path
+        let icon = NSWorkspace.shared.icon(forFile: path)
         if let name = appNameFromInfoPlist(url: url), !name.isEmpty {
-            return (name, icon)
+            return (name, icon, path)
         }
-        // 次选文件系统显示名
-        let fsName = FileManager.default.displayName(atPath: url.path)
+        let fsName = FileManager.default.displayName(atPath: path)
         let clean  = fsName.hasSuffix(".app") ? String(fsName.dropLast(4)) : fsName
         guard !clean.isEmpty else { return nil }
-        return (clean, icon)
+        return (clean, icon, path)
     }
 
     private func appNameFromInfoPlist(url: URL) -> String? {
@@ -203,12 +287,12 @@ final class AppIdentityResolver {
         return nil
     }
 
-    private func developerFromBundle(_ bundleID: String) -> String? {
-        guard let url  = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID),
-              let bundle = Bundle(url: url),
-              let org  = bundle.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String
+    /// 从已知 bundlePath 读取开发者信息（已有 URL，不再二次查询 LaunchServices）。
+    private func developerFromBundle(bundlePath: String) -> String? {
+        let url = URL(fileURLWithPath: bundlePath)
+        guard let bundle = Bundle(url: url),
+              let org = bundle.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String
         else { return nil }
-        // "Copyright © 2024 Tencent..." → "Tencent..."（简单截取）
         let stripped = org
             .replacingOccurrences(of: "Copyright", with: "")
             .replacingOccurrences(of: "©", with: "")
@@ -216,11 +300,12 @@ final class AppIdentityResolver {
         return stripped.isEmpty ? nil : stripped
     }
 
-    private func appIcon(for bundleID: String) -> NSImage? {
+    /// 获取应用图标 + bundlePath（用于 Level 2 KnownApps）。
+    private func appIconAndPath(for bundleID: String) -> (icon: NSImage, path: String)? {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
             return nil
         }
-        return NSWorkspace.shared.icon(forFile: url.path)
+        return (NSWorkspace.shared.icon(forFile: url.path), url.path)
     }
 
     // MARK: - Level 4: 段词典
@@ -297,6 +382,66 @@ final class AppIdentityResolver {
             .split(separator: " ", omittingEmptySubsequences: true)
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }
         return words.isEmpty ? nil : words.joined(separator: " ")
+    }
+
+    // MARK: - 磁盘缓存 I/O
+
+    private func loadDiskCache() {
+        guard let url  = diskCacheURL,
+              let data = try? Data(contentsOf: url),
+              let dict = try? JSONDecoder().decode([String: CachedIdentity].self, from: data)
+        else { return }
+        // 过滤掉过期条目，避免启动时加载大量废旧数据
+        diskCache = dict.filter { !$0.value.isExpired }
+        let expired = dict.count - diskCache.count
+        if expired > 0 {
+            Logger.resolver.info("磁盘缓存已清理 \(expired, privacy: .public) 条过期记录")
+        }
+    }
+
+    /// 异步快照写盘（不阻塞调用方）。
+    private func saveDiskCacheAsync() {
+        let snapshot = cacheLock.withLock { diskCache }
+        saveQueue.async { [weak self] in
+            self?.writeDiskCache(snapshot)
+        }
+    }
+
+    private func writeDiskCache(_ snapshot: [String: CachedIdentity]) {
+        guard let url = diskCacheURL else { return }
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder().encode(snapshot)
+            try data.write(to: url, options: .atomic)
+            Logger.resolver.debug("磁盘缓存写入: \(snapshot.count, privacy: .public) 条")
+        } catch {
+            Logger.resolver.error("磁盘缓存写入失败: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    // MARK: - 用户覆盖 I/O
+
+    private func loadUserOverrides() {
+        guard let url  = overridesURL,
+              let data = try? Data(contentsOf: url),
+              let dict = try? JSONDecoder().decode([String: String].self, from: data)
+        else { return }
+        userOverrides = dict
+    }
+
+    private func saveUserOverrides() {
+        guard let url = overridesURL else { return }
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder().encode(userOverrides)
+            try data.write(to: url, options: .atomic)
+        } catch { /* 写入失败不影响主功能 */ }
     }
 }
 

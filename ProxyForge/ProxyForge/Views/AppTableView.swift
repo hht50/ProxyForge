@@ -182,7 +182,7 @@ struct AppIconView: View {
             if let icon = identity?.icon {
                 Image(nsImage: icon)
                     .resizable()
-                    .interpolation(.high)
+                    .interpolation(.medium)
                     .scaledToFit()
             } else {
                 // 未安装或未识别时的占位图标
