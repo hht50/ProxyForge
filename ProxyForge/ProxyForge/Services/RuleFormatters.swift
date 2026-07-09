@@ -21,12 +21,23 @@ let allFormatters: [any RuleFormatter] = [
 // MARK: - 域名/IP 分组结果
 
 private struct SplitRules {
-    let exclusive: [String]   // 独占域名规则前缀（不含策略）
-    let shared:    [String]   // 共享域名规则前缀（不含策略）
-    let ips:       [String]   // IP 规则前缀（不含策略）
+    let exclusive: [String]    // 独有域名规则前缀（不含策略）
+    let shared:    [String]    // 共享域名规则前缀（不含策略）
+    let ips:       [String]    // IP 规则前缀（不含策略）
 }
 
-// MARK: - 共用规则构建（支持共享域名分组）
+// MARK: - 规则统计
+
+struct RuleStats {
+    let uniqueCount:   Int
+    let sharedCount:   Int
+    let ipCount:       Int
+    let totalRequests: Int
+
+    var totalDomains: Int { uniqueCount + sharedCount }
+}
+
+// MARK: - 核心规则构建（含优化等级过滤）
 
 private func buildSplitRules(
     app:          AppEntry,
@@ -35,19 +46,26 @@ private func buildSplitRules(
     ipv4Prefix:   String,
     ipv6Prefix:   String
 ) -> SplitRules {
-    var exclusiveDoms: [String]      = []
-    var sharedDoms:    [String]      = []
-    var ipRules:       [(String, Int)] = []
+    let level     = options.optimizationLevel
+    // minimal 级别隐式开启 mergeSub
+    let doMerge   = options.mergeSub || level == .minimal
     let sharedSet = options.sharedDomains
 
-    if options.mergeSub {
+    var exclusiveDoms: [String]        = []
+    var sharedDoms:    [String]        = []
+    var ipRules:       [(String, Int)] = []
+
+    if doMerge {
         // 合并子域：先计算根域 hits，再判断是否在共享集
         var rootHits:   [String: Int]  = [:]
         var rootShared: Set<String>    = []
         for (dom, info) in app.domains {
             if isIPAddress(dom) {
-                ipRules.append((dom, info.hits))
+                if !shouldFilter(dom, level: level) {
+                    ipRules.append((dom, info.hits))
+                }
             } else {
+                if shouldFilter(dom, level: level) { continue }
                 let root = rootDomain(dom)
                 rootHits[root, default: 0] += info.hits
                 if sharedSet.contains(dom) { rootShared.insert(root) }
@@ -61,8 +79,11 @@ private func buildSplitRules(
     } else {
         for (dom, info) in app.domains.sorted(by: { $0.value.hits > $1.value.hits }) {
             if isIPAddress(dom) {
-                ipRules.append((dom, info.hits))
+                if !shouldFilter(dom, level: level) {
+                    ipRules.append((dom, info.hits))
+                }
             } else {
+                if shouldFilter(dom, level: level) { continue }
                 let line = "\(domainPrefix),\(dom)"
                 if sharedSet.contains(dom) { sharedDoms.append(line) }
                 else                       { exclusiveDoms.append(line) }
@@ -79,19 +100,14 @@ private func buildSplitRules(
     return SplitRules(exclusive: exclusiveDoms, shared: sharedDoms, ips: ipLines)
 }
 
-/// 平铺版本（供 formatAll 使用，不区分共享/独占）
-private func buildRules(
-    app:          AppEntry,
-    options:      RuleOptions,
-    domainPrefix: String,
-    ipv4Prefix:   String,
-    ipv6Prefix:   String
-) -> [String] {
-    let s = buildSplitRules(app: app, options: options,
-                            domainPrefix: domainPrefix,
-                            ipv4Prefix: ipv4Prefix,
-                            ipv6Prefix: ipv6Prefix)
-    return s.exclusive + s.shared + s.ips
+/// 统计一次 split 的域名/IP 数量
+private func makeStats(_ split: SplitRules, totalRequests: Int) -> RuleStats {
+    RuleStats(
+        uniqueCount:   split.exclusive.count,
+        sharedCount:   split.shared.count,
+        ipCount:       split.ips.count,
+        totalRequests: totalRequests
+    )
 }
 
 // MARK: - 策略后缀辅助
@@ -101,34 +117,113 @@ private extension String {
     func proxySuffix() -> String { isEmpty ? "" : ",\(self)" }
 }
 
-// MARK: - 文件头
+// MARK: - 文件头（per-app block header）
 
-private func makeHeader(tool: String, count: Int) -> String {
-    let fmt = DateFormatter()
-    fmt.dateFormat = "yyyy-MM-dd HH:mm"
+/// width=60 的分隔线（不含前缀 "# "）
+private let hRule = String(repeating: "=", count: 60)
+
+private func appBlockHeader(
+    app:      AppEntry,
+    stats:    RuleStats,
+    options:  RuleOptions,
+    prefix:   String       // Clash 用 "  ", 其他用 ""
+) -> String {
+    let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd HH:mm"
+    let now = fmt.string(from: Date())
+
+    // 右对齐数字时对齐宽度
+    let rows: [(String, String)] = [
+        ("Application", app.name),
+        ("Bundle ID",   app.bundleID),
+        ("Export Type", options.exportTypeName),
+        ("Export Time", now),
+    ]
+
+    var lines: [String] = []
+    let p = prefix + "# "
+
+    lines.append(prefix + "# \(hRule)")
+    for (k, v) in rows {
+        lines.append("\(p)\(k.padding(toLength: 12, withPad: " ", startingAt: 0)) : \(v)")
+    }
+    lines.append(p)
+    lines.append("\(p)Domains")
+    lines.append("\(p)  Total   : \(stats.totalDomains)")
+    lines.append("\(p)  Unique  : \(stats.uniqueCount)")
+    lines.append("\(p)  Shared  : \(stats.sharedCount)")
+    lines.append(p)
+    lines.append("\(p)Requests  : \(stats.totalRequests)")
+    lines.append(prefix + "# \(hRule)")
+    return lines.joined(separator: "\n")
+}
+
+// MARK: - 文件尾统计（formatAll 使用）
+
+private func fileSummaryFooter(apps: [AppEntry], allStats: [RuleStats]) -> String {
+    let totalDoms = allStats.reduce(0) { $0 + $1.totalDomains }
+    let unique    = allStats.reduce(0) { $0 + $1.uniqueCount  }
+    let shared    = allStats.reduce(0) { $0 + $1.sharedCount  }
+    let ips       = allStats.reduce(0) { $0 + $1.ipCount      }
+    let reqs      = allStats.reduce(0) { $0 + $1.totalRequests}
+    let lines: [String] = [
+        "# \(hRule)",
+        "# Export Summary",
+        "#",
+        "#   Apps     : \(apps.count)",
+        "#   Domains  : \(totalDoms)",
+        "#   Unique   : \(unique)",
+        "#   Shared   : \(shared)",
+        "#   IPs      : \(ips)",
+        "#   Requests : \(reqs)",
+        "# \(hRule)",
+    ]
+    return lines.joined(separator: "\n")
+}
+
+// MARK: - 全文件头（formatAll 使用）
+
+private func fileHeader(tool: String) -> String {
+    let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd HH:mm"
     return """
-    # ============================================================
-    # \(tool) 分流规则 — 由 iOS App 隐私报告生成
-    # 生成时间: \(fmt.string(from: Date()))
-    # 应用数量: \(count)
-    # ============================================================
+    # \(hRule)
+    # \(tool) Rule Set
+    # Generated by ProxyForge from iOS App Privacy Report
+    # \(fmt.string(from: Date()))
+    # \(hRule)
     """
 }
 
-// MARK: - 应用头注释（含共享/独占统计）
+// MARK: - 通用块构建（Loon/Surge/QX 风格）
 
-private func appHeader(app: AppEntry, sharedCount: Int) -> [String] {
-    let exclusiveCount = app.domainCount - sharedCount
-    let detail: String
-    if sharedCount > 0 {
-        detail = "域名数: \(app.domainCount)（独占 \(exclusiveCount)  共享 \(sharedCount)）   总访问: \(app.totalHits) 次"
-    } else {
-        detail = "域名数: \(app.domainCount)   总访问: \(app.totalHits) 次"
+/// 构建单个 App 的规则块文本（含 header、各 section、不含尾部空行）。
+/// `ruleMap` 将规则前缀行转换为最终输出行。
+private func buildPlainBlock(
+    app:      AppEntry,
+    options:  RuleOptions,
+    split:    SplitRules,
+    stats:    RuleStats,
+    ruleMap:  (String) -> String
+) -> String {
+    let header = appBlockHeader(app: app, stats: stats, options: options, prefix: "")
+    var lines = [header, ""]
+
+    if !split.exclusive.isEmpty {
+        lines.append("# ===== Unique Domains =====")
+        lines.append(contentsOf: split.exclusive.map(ruleMap))
+        lines.append("")
     }
-    return [
-        "# ── \(app.name)  (\(app.bundleID))",
-        "# \(detail)",
-    ]
+    if !split.shared.isEmpty {
+        lines.append("# ===== Shared Domains =====")
+        lines.append(contentsOf: split.shared.map(ruleMap))
+        lines.append("")
+    }
+    if !split.ips.isEmpty {
+        lines.append("# ===== IP Rules =====")
+        lines.append(contentsOf: split.ips.map(ruleMap))
+        lines.append("")
+    }
+
+    return lines.joined(separator: "\n")
 }
 
 // MARK: - Loon
@@ -138,27 +233,55 @@ struct LoonFormatter: RuleFormatter {
     let fileExtension = "conf"
 
     func formatOne(app: AppEntry, options: RuleOptions) -> String {
-        let t     = options.proxyTarget.proxySuffix()
         let split = buildSplitRules(app: app, options: options,
                                     domainPrefix: "DOMAIN-SUFFIX",
                                     ipv4Prefix:   "IP-CIDR",
                                     ipv6Prefix:   "IP-CIDR6")
-        var lines = appHeader(app: app, sharedCount: split.shared.count)
-        lines += split.exclusive.map { "\($0)\(t)" }
-        lines += split.ips.map       { "\($0)\(t)" }
-        if !split.shared.isEmpty {
-            lines.append("")
-            lines.append("# ── 共享域名（同时被其他 App 使用）──")
-            lines += split.shared.map { "# \($0)\(t)" }
+        let stats = makeStats(split, totalRequests: app.totalHits)
+        let t     = options.proxyTarget.proxySuffix()
+
+        // 预览模式：sharedDomains 非空时，共享域名以注释显示（便于识别）
+        if !options.sharedDomains.isEmpty {
+            let header = appBlockHeader(app: app, stats: stats, options: options, prefix: "")
+            var lines  = [header, ""]
+            if !split.exclusive.isEmpty {
+                lines.append("# ===== Unique Domains =====")
+                lines += split.exclusive.map { "\($0)\(t)" }
+                lines.append("")
+            }
+            if !split.shared.isEmpty {
+                lines.append("# ===== Shared Domains (commented — enable in options) =====")
+                lines += split.shared.map { "# \($0)\(t)" }
+                lines.append("")
+            }
+            if !split.ips.isEmpty {
+                lines.append("# ===== IP Rules =====")
+                lines += split.ips.map { "\($0)\(t)" }
+                lines.append("")
+            }
+            return lines.joined(separator: "\n")
         }
-        lines.append("")
-        return lines.joined(separator: "\n")
+
+        // 导出模式：所有域名均为活跃规则
+        return buildPlainBlock(app: app, options: options, split: split, stats: stats) { "\($0)\(t)" }
     }
 
     func formatAll(apps: [AppEntry], options: RuleOptions) -> String {
-        makeHeader(tool: displayName, count: apps.count)
+        var allStats: [RuleStats] = []
+        let body = apps.map { app -> String in
+            let split = buildSplitRules(app: app, options: options,
+                                        domainPrefix: "DOMAIN-SUFFIX",
+                                        ipv4Prefix:   "IP-CIDR",
+                                        ipv6Prefix:   "IP-CIDR6")
+            let s = makeStats(split, totalRequests: app.totalHits)
+            allStats.append(s)
+            return formatOne(app: app, options: options)
+        }.joined(separator: "\n")
+
+        return fileHeader(tool: displayName)
             + "\n[Rule]\n\n"
-            + apps.map { formatOne(app: $0, options: options) }.joined(separator: "\n")
+            + body
+            + "\n\n" + fileSummaryFooter(apps: apps, allStats: allStats) + "\n"
     }
 }
 
@@ -171,10 +294,22 @@ struct SurgeFormatter: RuleFormatter {
     func formatOne(app: AppEntry, options: RuleOptions) -> String {
         LoonFormatter().formatOne(app: app, options: options)
     }
+
     func formatAll(apps: [AppEntry], options: RuleOptions) -> String {
-        makeHeader(tool: displayName, count: apps.count)
+        var allStats: [RuleStats] = []
+        let body = apps.map { app -> String in
+            let split = buildSplitRules(app: app, options: options,
+                                        domainPrefix: "DOMAIN-SUFFIX",
+                                        ipv4Prefix:   "IP-CIDR",
+                                        ipv6Prefix:   "IP-CIDR6")
+            allStats.append(makeStats(split, totalRequests: app.totalHits))
+            return formatOne(app: app, options: options)
+        }.joined(separator: "\n")
+
+        return fileHeader(tool: displayName)
             + "\n[Rule]\n\n"
-            + apps.map { formatOne(app: $0, options: options) }.joined(separator: "\n")
+            + body
+            + "\n\n" + fileSummaryFooter(apps: apps, allStats: allStats) + "\n"
     }
 }
 
@@ -185,40 +320,56 @@ struct QuantumultXFormatter: RuleFormatter {
     let fileExtension = "conf"
 
     func formatOne(app: AppEntry, options: RuleOptions) -> String {
-        let t     = options.proxyTarget.lowercased()
-        let proxy = t.proxySuffix()
+        let t     = options.proxyTarget.lowercased().proxySuffix()
         let split = buildSplitRules(app: app, options: options,
                                     domainPrefix: "host-suffix",
                                     ipv4Prefix:   "ip-cidr",
                                     ipv6Prefix:   "ip6-cidr")
-        var lines = ["# \(app.name) (\(app.bundleID))"]
-        // Quantumult X 格式：host-suffix, domain, policy
-        lines += split.exclusive.map { r in
-            let parts = r.split(separator: ",", maxSplits: 1)
-            return parts.count == 2 ? "\(parts[0]), \(parts[1])\(proxy)" : "\(r)\(proxy)"
+        let stats = makeStats(split, totalRequests: app.totalHits)
+
+        func qxLine(_ prefix: String) -> String {
+            let parts = prefix.split(separator: ",", maxSplits: 1)
+            return parts.count == 2 ? "\(parts[0]), \(parts[1])\(t)" : "\(prefix)\(t)"
         }
-        if options.includeIPs {
-            lines += split.ips.map { r in
-                let parts = r.split(separator: ",", maxSplits: 1)
-                return parts.count == 2 ? "\(parts[0]), \(parts[1])\(proxy)" : "\(r)\(proxy)"
+
+        if !options.sharedDomains.isEmpty {
+            let header = appBlockHeader(app: app, stats: stats, options: options, prefix: "")
+            var lines  = [header, ""]
+            if !split.exclusive.isEmpty {
+                lines.append("# ===== Unique Domains =====")
+                lines += split.exclusive.map(qxLine)
+                lines.append("")
             }
-        }
-        if !split.shared.isEmpty {
-            lines.append("")
-            lines.append("# ── 共享域名 ──")
-            lines += split.shared.map { r in
-                let parts = r.split(separator: ",", maxSplits: 1)
-                let rule  = parts.count == 2 ? "\(parts[0]), \(parts[1])\(proxy)" : "\(r)\(proxy)"
-                return "# \(rule)"
+            if !split.shared.isEmpty {
+                lines.append("# ===== Shared Domains (commented) =====")
+                lines += split.shared.map { "# \(qxLine($0))" }
+                lines.append("")
             }
+            if !split.ips.isEmpty {
+                lines.append("# ===== IP Rules =====")
+                lines += split.ips.map(qxLine)
+                lines.append("")
+            }
+            return lines.joined(separator: "\n")
         }
-        lines.append("")
-        return lines.joined(separator: "\n")
+
+        return buildPlainBlock(app: app, options: options, split: split, stats: stats, ruleMap: qxLine)
     }
 
     func formatAll(apps: [AppEntry], options: RuleOptions) -> String {
-        makeHeader(tool: displayName, count: apps.count) + "\n"
-            + apps.map { formatOne(app: $0, options: options) }.joined(separator: "\n")
+        var allStats: [RuleStats] = []
+        let body = apps.map { app -> String in
+            let split = buildSplitRules(app: app, options: options,
+                                        domainPrefix: "host-suffix",
+                                        ipv4Prefix:   "ip-cidr",
+                                        ipv6Prefix:   "ip6-cidr")
+            allStats.append(makeStats(split, totalRequests: app.totalHits))
+            return formatOne(app: app, options: options)
+        }.joined(separator: "\n")
+
+        return fileHeader(tool: displayName) + "\n"
+            + body
+            + "\n\n" + fileSummaryFooter(apps: apps, allStats: allStats) + "\n"
     }
 }
 
@@ -229,28 +380,57 @@ struct ClashFormatter: RuleFormatter {
     let fileExtension = "yaml"
 
     func formatOne(app: AppEntry, options: RuleOptions) -> String {
-        let t     = options.proxyTarget
-        let proxy = t.proxySuffix()
+        let t     = options.proxyTarget.proxySuffix()
         let split = buildSplitRules(app: app, options: options,
                                     domainPrefix: "DOMAIN-SUFFIX",
                                     ipv4Prefix:   "IP-CIDR",
                                     ipv6Prefix:   "IP-CIDR6")
-        var lines = ["  # \(app.name) (\(app.bundleID))"]
-        lines += split.exclusive.map { "  - \($0)\(proxy)" }
-        if options.includeIPs {
-            lines += split.ips.map   { "  - \($0)\(proxy)" }
+        let stats  = makeStats(split, totalRequests: app.totalHits)
+        let header = appBlockHeader(app: app, stats: stats, options: options, prefix: "  ")
+        var lines  = ["  \(header.components(separatedBy: "\n").joined(separator: "\n  "))", ""]
+
+        if !split.exclusive.isEmpty {
+            lines.append("  # ===== Unique Domains =====")
+            lines += split.exclusive.map { "  - \($0)\(t)" }
+            lines.append("")
         }
+
         if !split.shared.isEmpty {
-            lines.append("  # ── 共享域名 ──")
-            lines += split.shared.map { "  # - \($0)\(proxy)" }
+            if !options.sharedDomains.isEmpty {
+                // 预览：注释
+                lines.append("  # ===== Shared Domains (commented) =====")
+                lines += split.shared.map { "  # - \($0)\(t)" }
+            } else {
+                // 导出：活跃规则
+                lines.append("  # ===== Shared Domains =====")
+                lines += split.shared.map { "  - \($0)\(t)" }
+            }
+            lines.append("")
         }
-        lines.append("")
+
+        if !split.ips.isEmpty {
+            lines.append("  # ===== IP Rules =====")
+            lines += split.ips.map { "  - \($0)\(t)" }
+            lines.append("")
+        }
+
         return lines.joined(separator: "\n")
     }
 
     func formatAll(apps: [AppEntry], options: RuleOptions) -> String {
-        let header = makeHeader(tool: displayName, count: apps.count)
-        let body   = apps.map { formatOne(app: $0, options: options) }.joined(separator: "\n")
-        return "\(header)\nrules:\n\(body)"
+        var allStats: [RuleStats] = []
+        let body = apps.map { app -> String in
+            let split = buildSplitRules(app: app, options: options,
+                                        domainPrefix: "DOMAIN-SUFFIX",
+                                        ipv4Prefix:   "IP-CIDR",
+                                        ipv6Prefix:   "IP-CIDR6")
+            allStats.append(makeStats(split, totalRequests: app.totalHits))
+            return formatOne(app: app, options: options)
+        }.joined(separator: "\n")
+
+        return fileHeader(tool: displayName)
+            + "\nrules:\n\n"
+            + body
+            + "\n\n" + fileSummaryFooter(apps: apps, allStats: allStats).components(separatedBy: "\n").map { "  \($0)" }.joined(separator: "\n") + "\n"
     }
 }

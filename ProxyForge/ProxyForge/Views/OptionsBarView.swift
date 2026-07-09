@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - 选项栏
 
-/// 主窗口顶部的控制条：过滤开关、策略名、格式选择器、导出范围、状态文字。
+/// 主窗口顶部的控制条。
 struct OptionsBarView: View {
     @EnvironmentObject private var settings: UserSettings
     @EnvironmentObject private var vm:       ContentViewModel
@@ -12,24 +12,29 @@ struct OptionsBarView: View {
             Toggle("过滤系统应用", isOn: $settings.filterSystem)
                 .onChange(of: settings.filterSystem) { _ in vm.loadFiles() }
 
-            Toggle("合并子域", isOn: $settings.mergeSub)
-                .onChange(of: settings.mergeSub) { _ in vm.refreshPreview() }
-
             Toggle("包含 IP", isOn: $settings.includeIPs)
                 .onChange(of: settings.includeIPs) { _ in vm.refreshPreview() }
 
+            Toggle("包含共享域名", isOn: Binding(
+                get:  { !settings.exclusiveOnly },
+                set:  { settings.exclusiveOnly = !$0 }
+            ))
+            .help("关闭：只导出该 App 独占使用的域名（推荐）\n开启：同时导出与其他 App 共享的域名，作为活跃规则输出")
+            .onChange(of: settings.exclusiveOnly) { _ in vm.refreshPreview() }
+
             Divider().frame(height: 16)
 
-            // 导出范围：单选 Picker，替代原 Toggle
-            Text("导出范围:").foregroundStyle(.secondary)
-            Picker("", selection: $settings.exclusiveOnly) {
-                Text("仅独有域名").tag(true)
-                Text("全部域名").tag(false)
+            // 规则优化等级
+            Text("规则优化:").foregroundStyle(.secondary)
+            Picker("", selection: $settings.optimizationLevel) {
+                ForEach(OptimizationLevel.allCases, id: \.rawValue) { level in
+                    Text(level.displayName).tag(level.rawValue)
+                }
             }
             .pickerStyle(.segmented)
-            .frame(width: 160)
-            .help("仅独有域名：只导出该 App 独占使用的域名\n全部域名：包含独有域名 + 与其他 App 共享的域名")
-            .onChange(of: settings.exclusiveOnly) { _ in vm.refreshPreview() }
+            .frame(width: 150)
+            .help(OptimizationLevel(rawValue: settings.optimizationLevel)?.helpText ?? "")
+            .onChange(of: settings.optimizationLevel) { _ in vm.refreshPreview() }
 
             Divider().frame(height: 16)
 

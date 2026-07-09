@@ -52,10 +52,14 @@ final class ContentViewModel: ObservableObject {
 
     /// 基础选项（不含 sharedDomains；用于 formatAll / 导出）
     var options: RuleOptions {
-        RuleOptions(
-            mergeSub:    settings.mergeSub,
-            proxyTarget: settings.proxyName,
-            includeIPs:  settings.includeIPs
+        let level = OptimizationLevel(rawValue: settings.optimizationLevel) ?? .smart
+        return RuleOptions(
+            mergeSub:          level == .minimal,   // minimal 级别隐式开启根域合并
+            proxyTarget:       settings.proxyName,
+            includeIPs:        settings.includeIPs,
+            sharedDomains:     [],
+            optimizationLevel: level,
+            exportTypeName:    settings.exclusiveOnly ? "Unique Domains" : "All Domains"
         )
     }
 

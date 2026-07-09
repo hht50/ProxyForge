@@ -12,9 +12,6 @@ final class UserSettings: ObservableObject {
     @Published var filterSystem: Bool {
         didSet { save(filterSystem, forKey: .filterSystem) }
     }
-    @Published var mergeSub: Bool {
-        didSet { save(mergeSub, forKey: .mergeSub) }
-    }
     @Published var proxyName: String {
         didSet { save(proxyName, forKey: .proxyName) }
     }
@@ -24,27 +21,31 @@ final class UserSettings: ObservableObject {
     @Published var includeIPs: Bool {
         didSet { save(includeIPs, forKey: .includeIPs) }
     }
-    /// 规则预览 / 导出时只保留该 App 独占的域名（共享域名不输出）
+    /// 不包含共享域名（仅导出独占）；false = 包含共享域名
     @Published var exclusiveOnly: Bool {
         didSet { save(exclusiveOnly, forKey: .exclusiveOnly) }
+    }
+    /// 规则优化等级：0=原始 / 1=智能 / 2=极简
+    @Published var optimizationLevel: Int {
+        didSet { save(optimizationLevel, forKey: .optimizationLevel) }
     }
 
     // ── 初始化（从 UserDefaults 读取，不存在则用默认值）──────────────────────
 
     init() {
         let d = UserDefaults.standard
-        filterSystem  = d.object(forKey: Key.filterSystem.rawValue)  as? Bool   ?? true
-        mergeSub      = d.object(forKey: Key.mergeSub.rawValue)      as? Bool   ?? false
-        proxyName     = d.string(forKey: Key.proxyName.rawValue)                ?? ""
-        formatterIdx  = d.object(forKey: Key.formatterIdx.rawValue)  as? Int    ?? 0
-        includeIPs    = d.object(forKey: Key.includeIPs.rawValue)    as? Bool   ?? true
-        exclusiveOnly = d.object(forKey: Key.exclusiveOnly.rawValue) as? Bool   ?? false
+        filterSystem      = d.object(forKey: Key.filterSystem.rawValue)      as? Bool ?? true
+        proxyName         = d.string(forKey: Key.proxyName.rawValue)                  ?? ""
+        formatterIdx      = d.object(forKey: Key.formatterIdx.rawValue)      as? Int  ?? 0
+        includeIPs        = d.object(forKey: Key.includeIPs.rawValue)        as? Bool ?? true
+        exclusiveOnly     = d.object(forKey: Key.exclusiveOnly.rawValue)     as? Bool ?? false
+        optimizationLevel = d.object(forKey: Key.optimizationLevel.rawValue) as? Int  ?? 1
     }
 
     // ── 键名枚举 ──────────────────────────────────────────────────────────────
 
     private enum Key: String {
-        case filterSystem, mergeSub, proxyName, formatterIdx, includeIPs, exclusiveOnly
+        case filterSystem, proxyName, formatterIdx, includeIPs, exclusiveOnly, optimizationLevel
     }
 
     private func save<T>(_ value: T, forKey key: Key) {

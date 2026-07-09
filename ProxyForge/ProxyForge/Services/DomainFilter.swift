@@ -46,9 +46,7 @@ let proxyToolBundleIDs: Set<String> = [
 
 /// 返回 true 表示该地址为本地网络、回环、链路本地或 CGNAT 等无需代理的保留地址。
 func isPrivateIP(_ address: String) -> Bool {
-    if address.contains(":") {
-        return isPrivateIPv6(address)
-    }
+    if address.contains(":") { return isPrivateIPv6(address) }
     return isPrivateIPv4(address)
 }
 
@@ -57,49 +55,62 @@ private func isPrivateIPv4(_ address: String) -> Bool {
     guard octets.count == 4 else { return false }
     let (a, b) = (octets[0], octets[1])
     switch a {
-    case 10:  return true                           // 10.0.0.0/8
-    case 127: return true                           // 127.0.0.0/8 loopback
-    case 169: return b == 254                       // 169.254.0.0/16 link-local
-    case 172: return (16...31).contains(b)          // 172.16.0.0/12
-    case 192: return b == 168                       // 192.168.0.0/16
-    case 100: return (64...127).contains(b)         // 100.64.0.0/10 CGNAT
-    case 0:   return true                           // 0.0.0.0/8 保留
-    case 240...255: return true                     // 240.0.0.0/4 保留
-    default:  return false
+    case 10:        return true                       // 10.0.0.0/8
+    case 127:       return true                       // 127.0.0.0/8 loopback
+    case 169:       return b == 254                   // 169.254.0.0/16 link-local
+    case 172:       return (16...31).contains(b)      // 172.16.0.0/12
+    case 192:       return b == 168                   // 192.168.0.0/16
+    case 100:       return (64...127).contains(b)     // 100.64.0.0/10 CGNAT
+    case 0:         return true                       // 0.0.0.0/8 保留
+    case 240...255: return true                       // 240.0.0.0/4 保留
+    default:        return false
     }
+}
+
+// MARK: - Fake-IP 检测（198.18.0.0/15）
+
+/// Clash / Mihomo / Surge Fake-IP 地址段（198.18.0.0/15 = 198.18.x.x + 198.19.x.x）。
+/// 这些 IP 由代理客户端在本地虚拟生成，写入规则集完全无意义。
+func isFakeIP(_ address: String) -> Bool {
+    guard !address.contains(":") else { return false }   // 仅 IPv4
+    let octets = address.split(separator: ".").compactMap { Int($0) }
+    guard octets.count == 4 else { return false }
+    return octets[0] == 198 && (octets[1] == 18 || octets[1] == 19)
 }
 
 private func isPrivateIPv6(_ address: String) -> Bool {
     let lower = address.lowercased()
-    return lower == "::1"                           // loopback
-        || lower.hasPrefix("fe80")                  // fe80::/10 link-local
-        || lower.hasPrefix("fc")                    // fc00::/7 unique local (fc)
-        || lower.hasPrefix("fd")                    // fc00::/7 unique local (fd)
-        || lower == "::"                            // 未指定地址
+    return lower == "::1"             // loopback
+        || lower.hasPrefix("fe80")    // fe80::/10 link-local
+        || lower.hasPrefix("fc")      // fc00::/7 unique local
+        || lower.hasPrefix("fd")
+        || lower == "::"              // 未指定地址
 }
 
 // MARK: - 代理工具域名检测
 
-/// 已知代理 / VPN 服务域名后缀，通常在代理工具日志中出现但与实际业务无关
+/// 已知代理 / VPN 服务域名后缀
 private let proxyServiceDomainSuffixes: [String] = [
-    // Cloudflare
-    "cloudflare-dns.com", "cloudflare.com", "1dot1dot1dot1.cloudflare.com",
-    // Apple 推送 / 诊断（由系统级代理产生，非真实应用流量）
+    "cloudflare-dns.com", "cloudflare.com",
     "courier.push.apple.com",
-    // WireGuard / VPN 控制面
     "wireguard.com",
 ]
 
-/// 返回 true 表示该域名疑似来自代理工具自身的流量，应过滤
+/// 返回 true 表示该域名疑似来自代理工具自身流量，应过滤
 func isProxyServiceDomain(_ domain: String) -> Bool {
     let lower = domain.lowercased()
     return proxyServiceDomainSuffixes.contains { lower == $0 || lower.hasSuffix(".\($0)") }
 }
 
-// MARK: - 综合过滤入口（供 ReportParser 使用）
+// MARK: - 优化等级过滤入口
 
-/// 判断一个域名是否应被过滤掉（私有 IP + 已知代理服务域名）
-func shouldFilterDomain(_ domain: String) -> Bool {
-    if isIPAddress(domain) { return isPrivateIP(domain) }
-    return isProxyServiceDomain(domain)
+/// 判断域名/IP 是否应根据指定优化等级被过滤掉。
+/// - `.raw`  → 永不过滤
+/// - `.smart` / `.minimal` → 过滤私有 IP + Fake-IP + 代理服务域名
+func shouldFilter(_ entry: String, level: OptimizationLevel) -> Bool {
+    guard level != .raw else { return false }
+    if isIPAddress(entry) {
+        return isPrivateIP(entry) || isFakeIP(entry)
+    }
+    return isProxyServiceDomain(entry)
 }
