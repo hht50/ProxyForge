@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 // MARK: - 日志查看器
 
 struct LogViewerView: View {
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject private var store = LogStore.shared
     @State private var selectedCategory: LogCategory? = nil
     @State private var minLevel:         LogLevel     = .debug
@@ -27,6 +28,11 @@ struct LogViewerView: View {
             bottomBar
         }
         .frame(minWidth: 780, minHeight: 480)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("关闭") { dismiss() }
+            }
+        }
         .alert("导出失败", isPresented: $showExportAlert) {
             Button("好") { }
         } message: {

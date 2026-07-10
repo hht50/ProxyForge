@@ -75,6 +75,11 @@ final class AppIdentityResolver {
     /// 后台磁盘写入队列（串行，防止并发写入损坏文件）
     private let saveQueue = DispatchQueue(label: "com.proxyforge.identity.save", qos: .utility)
 
+    /// NSWorkspace / LaunchServices 串行锁。
+    /// NSWorkspace.shared.urlForApplication 在多线程并发调用时会导致 LaunchServices
+    /// 内部数据结构损坏（Data Abort / EXC_BREAKPOINT），必须通过此锁串行化。
+    private let workspaceLock = NSLock()
+
     // MARK: - 用户覆盖（highest priority, normalized bundleID → 自定义名称）
     private var userOverrides: [String: String] = [:]
 
@@ -263,12 +268,14 @@ final class AppIdentityResolver {
     // MARK: - Level 3: NSWorkspace + Info.plist
 
     /// 返回 (displayName, icon, bundlePath)，bundlePath 供缓存重用。
+    /// 通过 workspaceLock 串行化 LaunchServices 查询，防止并发导致内部数据损坏。
     private func appNameAndIconFromLaunchServices(_ bundleID: String) -> (name: String, icon: NSImage?, path: String)? {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-            return nil
+        let url: URL? = workspaceLock.withLock {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
         }
+        guard let url else { return nil }
         let path = url.path
-        let icon = NSWorkspace.shared.icon(forFile: path)
+        let icon = workspaceLock.withLock { NSWorkspace.shared.icon(forFile: path) }
         if let name = appNameFromInfoPlist(url: url), !name.isEmpty {
             return (name, icon, path)
         }
@@ -301,11 +308,14 @@ final class AppIdentityResolver {
     }
 
     /// 获取应用图标 + bundlePath（用于 Level 2 KnownApps）。
+    /// 通过 workspaceLock 串行化 LaunchServices 查询。
     private func appIconAndPath(for bundleID: String) -> (icon: NSImage, path: String)? {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-            return nil
+        let url: URL? = workspaceLock.withLock {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
         }
-        return (NSWorkspace.shared.icon(forFile: url.path), url.path)
+        guard let url else { return nil }
+        let icon = workspaceLock.withLock { NSWorkspace.shared.icon(forFile: url.path) }
+        return (icon, url.path)
     }
 
     // MARK: - Level 4: 段词典

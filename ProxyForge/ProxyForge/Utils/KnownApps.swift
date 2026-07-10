@@ -177,7 +177,7 @@ enum KnownApps {
         // 系统（Apple 系统应用）
         "com.apple.mobilemail": .system, "com.apple.mobilecalendar": .system,
         "com.apple.mobilenotes": .system, "com.apple.health": .system,
-        "com.apple.photos": .system, "com.apple.music": .system,
+        "com.apple.photos": .system,
         "com.apple.news": .system, "com.apple.stocks": .system,
         "com.apple.findmy": .system, "com.apple.shortcuts": .system,
         "com.apple.appstore": .system,

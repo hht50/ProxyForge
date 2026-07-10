@@ -230,7 +230,7 @@ private func buildPlainBlock(
 
 struct LoonFormatter: RuleFormatter {
     let displayName   = "Loon"
-    let fileExtension = "conf"
+    let fileExtension = "txt"
 
     func formatOne(app: AppEntry, options: RuleOptions) -> String {
         let split = buildSplitRules(app: app, options: options,
@@ -289,7 +289,7 @@ struct LoonFormatter: RuleFormatter {
 
 struct SurgeFormatter: RuleFormatter {
     let displayName   = "Surge"
-    let fileExtension = "conf"
+    let fileExtension = "txt"
 
     func formatOne(app: AppEntry, options: RuleOptions) -> String {
         LoonFormatter().formatOne(app: app, options: options)
@@ -317,7 +317,7 @@ struct SurgeFormatter: RuleFormatter {
 
 struct QuantumultXFormatter: RuleFormatter {
     let displayName   = "Quantumult X"
-    let fileExtension = "conf"
+    let fileExtension = "txt"
 
     func formatOne(app: AppEntry, options: RuleOptions) -> String {
         let t     = options.proxyTarget.lowercased().proxySuffix()
@@ -377,7 +377,7 @@ struct QuantumultXFormatter: RuleFormatter {
 
 struct ClashFormatter: RuleFormatter {
     let displayName   = "Clash"
-    let fileExtension = "yaml"
+    let fileExtension = "txt"
 
     func formatOne(app: AppEntry, options: RuleOptions) -> String {
         let t     = options.proxyTarget.proxySuffix()
