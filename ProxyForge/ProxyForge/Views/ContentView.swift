@@ -84,6 +84,9 @@ struct ContentView: View {
             RefreshButton()
         }
         ToolbarItem {
+            LogViewerButton()
+        }
+        ToolbarItem {
             AboutButton()
         }
     }
@@ -118,6 +121,21 @@ private struct AboutButton: View {
     var body: some View {
         Button { NSApp.orderFrontStandardAboutPanel(nil) } label: {
             Label("关于", systemImage: "info.circle")
+        }
+    }
+}
+
+private struct LogViewerButton: View {
+    @State private var showLogs = false
+    var body: some View {
+        Button {
+            showLogs = true
+        } label: {
+            Label("应用日志", systemImage: "list.bullet.rectangle")
+        }
+        .help("查看应用运行日志")
+        .sheet(isPresented: $showLogs) {
+            LogViewerView()
         }
     }
 }

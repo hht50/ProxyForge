@@ -11,6 +11,12 @@
 		2033A91E3679DBF86F237699 /* DomainFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BB676708EDADE08F0DC74D6 /* DomainFilter.swift */; };
 		27CE755B883648D0B1E5125F /* UserSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72F56D2E133C29CAAF7D58A1 /* UserSettings.swift */; };
 		EE99FF0011223344AABB5566 /* RuleExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0011223344AABB5566EE99 /* RuleExport.swift */; };
+		AA01BB02CC03DD04EE05FF06 /* LogLevel.swift in Sources */    = {isa = PBXBuildFile; fileRef = BB01CC02DD03EE04FF05AA06 /* LogLevel.swift */; };
+		AA02BB03CC04DD05EE06FF07 /* LogEntry.swift in Sources */    = {isa = PBXBuildFile; fileRef = BB02CC03DD04EE05FF06AA07 /* LogEntry.swift */; };
+		AA03BB04CC05DD06EE07FF08 /* LogStore.swift in Sources */    = {isa = PBXBuildFile; fileRef = BB03CC04DD05EE06FF07AA08 /* LogStore.swift */; };
+		AA04BB05CC06DD07EE08FF09 /* ExportLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB04CC05DD06EE07FF08AA09 /* ExportLogger.swift */; };
+		AA05BB06CC07DD08EE09FF10 /* LogExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB05CC06DD07EE08FF09AA10 /* LogExporter.swift */; };
+		AA06BB07CC08DD09EE10FF11 /* LogViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB06CC07DD08EE09FF10AA11 /* LogViewerView.swift */; };
 		375B98C9E64D8DB4BA10B11C /* AppSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F3602FD4850717D3706755 /* AppSidebarView.swift */; };
 		4FA7503F4373181D70907CCC /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17E0E0BDCAFFEFC8271A91F1 /* ContentViewModel.swift */; };
 		58B04B613755493C820A93F3 /* RuleFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6FFD20E8B4BF4F0F805419 /* RuleFormatters.swift */; };
@@ -38,6 +44,12 @@
 		709440305D5815BB92CDDEEA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		72F56D2E133C29CAAF7D58A1 /* UserSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserSettings.swift; sourceTree = "<group>"; };
 		FF0011223344AABB5566EE99 /* RuleExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuleExport.swift; sourceTree = "<group>"; };
+		BB01CC02DD03EE04FF05AA06 /* LogLevel.swift */    = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogLevel.swift;    sourceTree = "<group>"; };
+		BB02CC03DD04EE05FF06AA07 /* LogEntry.swift */    = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogEntry.swift;    sourceTree = "<group>"; };
+		BB03CC04DD05EE06FF07AA08 /* LogStore.swift */    = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogStore.swift;    sourceTree = "<group>"; };
+		BB04CC05DD06EE07FF08AA09 /* ExportLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportLogger.swift; sourceTree = "<group>"; };
+		BB05CC06DD07EE08FF09AA10 /* LogExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogExporter.swift; sourceTree = "<group>"; };
+		BB06CC07DD08EE09FF10AA11 /* LogViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogViewerView.swift; sourceTree = "<group>"; };
 		88F3602FD4850717D3706755 /* AppSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSidebarView.swift; sourceTree = "<group>"; };
 		8BB676708EDADE08F0DC74D6 /* DomainFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainFilter.swift; sourceTree = "<group>"; };
 		8D57094CC97C3A76457FA5ED /* ProxyForgeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyForgeApp.swift; sourceTree = "<group>"; };
@@ -83,6 +95,11 @@
 				233E41740A59B37B19A98619 /* DomainUtils.swift */,
 				AF27D7E0FCFF8022D350DDAF /* KnownApps.swift */,
 				FF0011223344AABB5566EE99 /* RuleExport.swift */,
+				BB01CC02DD03EE04FF05AA06 /* LogLevel.swift */,
+				BB02CC03DD04EE05FF06AA07 /* LogEntry.swift */,
+				BB03CC04DD05EE06FF07AA08 /* LogStore.swift */,
+				BB04CC05DD06EE07FF08AA09 /* ExportLogger.swift */,
+				BB05CC06DD07EE08FF09AA10 /* LogExporter.swift */,
 				72F56D2E133C29CAAF7D58A1 /* UserSettings.swift */,
 			);
 			path = Utils;
@@ -141,6 +158,7 @@
 				D3E58F3511DCDA24913BAAD7 /* OptionsBarView.swift */,
 				E327758C9D10F267FBE00ECC /* RulePreviewView.swift */,
 				0BE3836F56C5724B1371CFCE /* StatusBarView.swift */,
+				BB06CC07DD08EE09FF10AA11 /* LogViewerView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -219,6 +237,12 @@
 				8533F96C01FB34E4E2072A72 /* ReportParser.swift in Sources */,
 				58B04B613755493C820A93F3 /* RuleFormatters.swift in Sources */,
 				EE99FF0011223344AABB5566 /* RuleExport.swift in Sources */,
+				AA01BB02CC03DD04EE05FF06 /* LogLevel.swift in Sources */,
+				AA02BB03CC04DD05EE06FF07 /* LogEntry.swift in Sources */,
+				AA03BB04CC05DD06EE07FF08 /* LogStore.swift in Sources */,
+				AA04BB05CC06DD07EE08FF09 /* ExportLogger.swift in Sources */,
+				AA05BB06CC07DD08EE09FF10 /* LogExporter.swift in Sources */,
+				AA06BB07CC08DD09EE10FF11 /* LogViewerView.swift in Sources */,
 				A514CEBE924EB20EE905C69D /* RuleOptions.swift in Sources */,
 				A240F6623BF6653A8BCE671D /* RulePreviewView.swift in Sources */,
 				63019619830D12C80F31E65E /* StatusBarView.swift in Sources */,

@@ -48,16 +48,18 @@ struct RulePreviewView: View {
                 } label: {
                     Label("复制选中", systemImage: "doc.on.doc")
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .help("复制当前预览的规则文本 ⌘⇧C")
                 .disabled(vm.selectedIDs.isEmpty)
                 .keyboardShortcut("c", modifiers: [.command, .shift])
 
-                // 导出选中 — pull-down Menu（⌘E 触发当前导出格式）
+                // 导出选中 — pull-down Menu
+                // 注意：Menu 不能用外层 HStack 的 .buttonStyle，否则 dropdown 不弹出
                 exportSelectedMenu
+                    .controlSize(.small)
                     .keyboardShortcut("e")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
 
             Divider().frame(height: 16)
 
@@ -69,14 +71,15 @@ struct RulePreviewView: View {
                 } label: {
                     Label("复制全部", systemImage: "doc.on.clipboard")
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .help("复制全部应用的合并规则")
                 .disabled(vm.apps.isEmpty)
 
-                // 导出全部 — pull-down Menu
+                // 导出全部 — pull-down Menu（独立，不继承 HStack buttonStyle）
                 exportAllMenu
+                    .controlSize(.small)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

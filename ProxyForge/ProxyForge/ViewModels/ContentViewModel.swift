@@ -335,7 +335,7 @@ final class ContentViewModel: ObservableObject {
     /// 将指定范围以单一格式导出。
     /// - `scope.selected([app])` → NSSavePanel，单文件（formatOne）
     /// - `scope.selected([...])` → NSSavePanel，ZIP（每App一文件）
-    /// - `scope.all`             → NSSavePanel，合并大文件（formatAll）
+    /// - `scope.all`             → NSSavePanel，ZIP（每 App 一文件，与多选语义一致）
     func export(scope: ExportScope, format: ExportFormat) {
         let fmt = format.formatter
         switch scope {
@@ -344,7 +344,8 @@ final class ContentViewModel: ObservableObject {
             if targets.count == 1 { exportSingle(app: targets[0], fmt: fmt) }
             else                  { exportMultipleAsZip(apps: targets, fmt: fmt) }
         case .all:
-            exportAllMerged(fmt: fmt)
+            guard !apps.isEmpty else { statusText = "⚠ 请先加载文件"; return }
+            exportMultipleAsZip(apps: sortedApps, fmt: fmt, baseName: "ProxyForge")
         }
     }
 
@@ -479,10 +480,11 @@ final class ContentViewModel: ObservableObject {
 
     // ── 私有：多 App ZIP 导出（单格式）────────────────────────────────────────
 
-    private func exportMultipleAsZip(apps targets: [AppEntry], fmt: any RuleFormatter) {
+    private func exportMultipleAsZip(apps targets: [AppEntry], fmt: any RuleFormatter, baseName: String? = nil) {
         let panel    = NSSavePanel()
         let scopeTag = settings.exclusiveOnly ? "独有" : "全部"
-        panel.nameFieldStringValue = "ProxyForge_\(targets.count)个应用_\(scopeTag)_\(dateTag()).zip"
+        let fileBase = baseName ?? "ProxyForge_\(targets.count)个应用"
+        panel.nameFieldStringValue = "\(fileBase)_\(scopeTag)_\(dateTag()).zip"
         if let t = UTType(filenameExtension: "zip") { panel.allowedContentTypes = [t] }
         guard panel.runModal() == .OK, let zipURL = panel.url else { return }
 
@@ -495,10 +497,18 @@ final class ContentViewModel: ObservableObject {
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
+            let ctx = ExportLogger.start(
+                format:      fmt.displayName,
+                appCount:    capturedTargets.count,
+                domainCount: capturedTargets.reduce(0) { $0 + $1.domainCount }
+            )
             do {
+                let t0 = CFAbsoluteTimeGetCurrent()
                 let exportApps = capturedExclusive
                     ? capturedTargets.map { Self.filterApp($0, sharedKeys: capturedShared) }
                     : capturedTargets
+                var c = ctx; c.addStep("filter", from: t0)
+                let t1 = CFAbsoluteTimeGetCurrent()
                 try await Self.buildZip(
                     apps:      exportApps,
                     formatter: fmt,
@@ -506,13 +516,14 @@ final class ContentViewModel: ObservableObject {
                     scopeTag:  scopeTag,
                     to:        zipURL
                 )
+                var c2 = c; c2.addStep("zip", from: t1)
                 await MainActor.run {
-                    Logger.export.info("ZIP 导出成功: \(zipURL.lastPathComponent, privacy: .public)")
+                    ExportLogger.complete(context: c2, fileURL: zipURL)
                     self.statusText = "✓ 已导出 \(capturedTargets.count) 个应用 → \(zipURL.lastPathComponent)"
                 }
             } catch {
                 await MainActor.run {
-                    Logger.export.error("ZIP 导出失败: \(error.localizedDescription, privacy: .public)")
+                    ExportLogger.failed(error, context: ctx)
                     self.statusText = "❌ ZIP 导出失败: \(error.localizedDescription)"
                 }
             }
@@ -540,16 +551,20 @@ final class ContentViewModel: ObservableObject {
 
         switch scope {
         case .all:
-            // 每格式一个合并大文件，平铺
+            // 每格式一子目录，每 App 一文件（与 selected(N apps) 语义一致）
+            useSubDirs = true
             let apps = exclusiveOnly
                 ? sortedApps.map { filterApp($0, sharedKeys: sharedKeys) }
                 : sortedApps
             for fmt in allFormatters {
-                let fileName = "\(fmt.displayName)_\(scopeTag).\(fmt.fileExtension)"
-                let fileURL  = tmpDir.appendingPathComponent(fileName)
-                try fmt.formatAll(apps: apps, options: options)
-                    .write(to: fileURL, atomically: true, encoding: .utf8)
-                flatFilePaths.append(fileURL.path)
+                let subDir = tmpDir.appendingPathComponent(fmt.displayName)
+                try fm.createDirectory(at: subDir, withIntermediateDirectories: true)
+                for app in apps {
+                    let safeName = app.name.replacingOccurrences(of: "/", with: "-")
+                    let fileURL  = subDir.appendingPathComponent("\(safeName).\(fmt.fileExtension)")
+                    try fmt.formatOne(app: app, options: options)
+                        .write(to: fileURL, atomically: true, encoding: .utf8)
+                }
             }
 
         case .selected(let targets):
