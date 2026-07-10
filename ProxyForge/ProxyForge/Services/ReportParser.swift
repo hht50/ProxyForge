@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+// AppLogger 写入 LogStore，供应用内日志查看器使用
 
 // MARK: - 内部聚合结构
 //
@@ -62,7 +63,7 @@ private func buildAppEntries(from acc: [String: AppSlot]) async -> [AppEntry] {
 /// - Returns: 按 totalHits 降序排列的 AppEntry 数组
 /// - Throws: 文件读取或内容为空时抛出错误
 func parseReport(url: URL, filterSystem: Bool) async throws -> [AppEntry] {
-    Logger.parser.info("开始解析: \(url.lastPathComponent, privacy: .public)")
+    AppLogger.shared.info("开始解析: \(url.lastPathComponent)", category: .import)
 
     let content = try String(contentsOf: url, encoding: .utf8)
 
@@ -108,7 +109,7 @@ func parseReport(url: URL, filterSystem: Bool) async throws -> [AppEntry] {
     // 并发解析所有 identity（L1→L2→L3 三级缓存，冷路径 NSWorkspace 并行执行）
     let result = await buildAppEntries(from: acc)
 
-    Logger.parser.info("解析完成: \(result.count, privacy: .public) 个应用, \(skipped, privacy: .public) 行跳过")
+    AppLogger.shared.success("解析完成: \(result.count) 个应用, \(skipped) 行跳过", category: .import)
     return result
 }
 
@@ -125,7 +126,7 @@ func parseReport(url: URL, filterSystem: Bool) async throws -> [AppEntry] {
 /// - Returns: 按 totalHits 降序排列的合并结果
 func parseReports(urls: [URL], filterSystem: Bool) async throws -> [AppEntry] {
     guard !urls.isEmpty else { return [] }
-    Logger.parser.info("并发解析 \(urls.count, privacy: .public) 个文件")
+    AppLogger.shared.info("并发解析 \(urls.count) 个文件", category: .import)
 
     // ── 1. 并发解析，每个文件在独立任务中运行 ──────────────────────────────
     let partials: [[AppEntry]] = try await withThrowingTaskGroup(of: [AppEntry].self) { group in
@@ -166,6 +167,6 @@ func parseReports(urls: [URL], filterSystem: Bool) async throws -> [AppEntry] {
     // ── 3. 统一出口：并发解析 identity（L1缓存命中为主，极低开销）─────────
     let result = await buildAppEntries(from: acc)
 
-    Logger.parser.info("合并完成: \(result.count, privacy: .public) 个应用 (来自 \(urls.count, privacy: .public) 个文件)")
+    AppLogger.shared.success("合并完成: \(result.count) 个应用 (来自 \(urls.count) 个文件)", category: .import)
     return result
 }

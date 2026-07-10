@@ -40,7 +40,7 @@ final class ContentViewModel: ObservableObject {
 
     init(settings: UserSettings) {
         self.settings = settings
-        Logger.ui.debug("ContentViewModel 初始化")
+        AppLogger.shared.debug("ContentViewModel 初始化", category: .app)
         // 从 UserSettings 恢复上次排序状态
         self.sortOrder = Self.restoredSortOrder(key: settings.appSortKey, ascending: settings.appSortAscending)
         // 预热 L1：从上次会话保存的 bundleID 列表加载 L2→L1，避免冷启动首屏等待
